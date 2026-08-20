@@ -12,11 +12,29 @@ each plugin stays an independent versionable unit.
 ```
 dsh-hub/
 ├── deepseek-harness/   # Official harness, tracked on master (see Submodules)
+├── packagers/dsh-packager # Desktop packager — specify DSH_DIR, out-of-box installer (see Releases)
 └── plugins/
     ├── llm/ shell/ fs/ sandbox/ subprocess/ terminal/ lsp/
     ├── web/ subagent/ workflow/ jobs/ skill/ compaction/
     └── guard/ todo/ plan/ goal/ hooks/ settings/ credentials/
 ```
+
+## Desktop packager (out-of-box)
+
+`packagers/dsh-packager` is a non-invasive packager: point `DSH_DIR` at a `deepseek-harness` checkout and get a desktop installer without patching `dsh`. Plugin hot-plug (`dsh plugin add`) stays via `~/.dsh`.
+
+```sh
+npm --prefix packagers/dsh-packager install
+npm --prefix packagers/dsh-packager run build -- --dsh-dir deepseek-harness
+npm --prefix packagers/dsh-packager run dist:win  # or dist / npx electron-packager
+```
+
+Icons from `deepseek-harness/apps/web/public/favicon.svg` → `packagers/dsh-packager/build/icon.*`, frameless `frame:false` + `Tray` (close hides to tray).
+
+**Downloads**
+
+- dsh-packager: https://github.com/Lin-A1/dsh-packager/releases — `dsh-desktop-win32-x64.zip` (portable) + `dsh-desktop Setup 0.1.0.exe` (NSIS)
+- dsh-hub re-export: https://github.com/Lin-A1/dsh-hub/releases — same artifacts
 
 A plugin goes under the category its capability belongs to, regardless of who
 maintains it. Categories mirror the official
