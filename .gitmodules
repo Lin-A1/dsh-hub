@@ -25,6 +25,21 @@
 [submodule "plugins/memory/memos"]
 	path = plugins/memory/memos
 	url = https://github.com/MemTensor/MemOS.git
+[submodule "plugins/shell/dsh-shell-win-corrected"]
+	path = plugins/shell/dsh-shell-win-corrected
+	url = https://github.com/Lin-A1/dsh-shell-win-corrected.git
+[submodule "plugins/web/dsh-web-firecrawl"]
+	path = plugins/web/dsh-web-firecrawl
+	url = https://github.com/Lin-A1/dsh-web-firecrawl.git
+[submodule "plugins/subagent/dsh-subagent-http"]
+	path = plugins/subagent/dsh-subagent-http
+	url = https://github.com/Lin-A1/dsh-subagent-http.git
+[submodule "plugins/jobs/dsh-jobs-cron"]
+	path = plugins/jobs/dsh-jobs-cron
+	url = https://github.com/Lin-A1/dsh-jobs-cron.git
+[submodule "plugins/skill/dsh-skill-github"]
+	path = plugins/skill/dsh-skill-github
+	url = https://github.com/Lin-A1/dsh-skill-github.git
 [submodule "packagers/dsh-packager"]
 	path = packagers/dsh-packager
 	url = https://github.com/Lin-A1/dsh-packager.git

@@ -29,3 +29,6 @@ plugins sit side by side under the category their capability belongs to.
 | `hooks/` | Claude Code / Codex hook bridges |
 | `settings/` | User-settings providers |
 | `credentials/` | Credential-reference providers |
+| `vision/` | Vision bridges for text-only models (OCR/layout) |
+| `memory/` | Long-term memory and context bundles |
+| `docs/` | Architecture/docs generation |

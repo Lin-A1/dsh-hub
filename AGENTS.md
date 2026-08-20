@@ -109,13 +109,14 @@ combines plugin manifests.
   [plugin spec](#plugin-spec-what-a-plugin-repo-must-look-like). A hub entry
   is a publication signal: do not index a repo that would fail
   `dsh plugin add` against a fresh profile.
+- **Verification is mandatory**: create a fresh profile and run `dsh plugin --profile <tmp> add` for every supported path — `github:<owner>/<repo>`, `npm:<pkg>`, and `local: ./plugins/<category>/<name>` — confirm `lib/` builds via `prepare`, no `dsh plugin` warning, and `dsh --dump-config` shows the layer active. Record the verification command and output in the PR.
 - Use a stable submodule pointer: default branch HEAD, or a release tag if
   the plugin author publishes them.
 - Adding the submodule does not install the plugin into any profile. Users
   install via `dsh plugin add <path-or-github-spec>`.
 - Each plugin needs a short README entry in `plugins/<category>/` (or the
   plugin's own README linked from the root index) declaring: capability,
-  config schema, events emitted or consumed, and the upstream tracker.
+  config schema, events emitted or consumed, and the upstream tracker. The README's install snippet (`dsh plugin add ...`) must be copy-paste runnable and match the verification above.
 
 ## Removing a plugin
 
