@@ -2,3 +2,11 @@
 	path = deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
 	branch = master
+[submodule "plugins/browser/dsh-agent-browser"]
+	path = plugins/browser/dsh-agent-browser
+	url = https://github.com/Lin-A1/dsh-agent-browser.git
+	branch = master
+[submodule "plugins/terminal/dsh-ssh-terminal"]
+	path = plugins/terminal/dsh-ssh-terminal
+	url = https://github.com/Lin-A1/dsh-ssh-terminal.git
+	branch = master

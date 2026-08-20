@@ -16,6 +16,7 @@ plugins sit side by side under the category their capability belongs to.
 | `terminal/` | Persistent PTY sessions and tools |
 | `lsp/` | Language-server seam, stdio providers, lsp tool |
 | `web/` | Search/fetch providers and model-facing web tools |
+| `browser/` | Browser automation: page control, snapshots, interaction, screenshots |
 | `subagent/` | Sub-agent provider registry and delegation tools |
 | `workflow/` | Workflow seam, worker-thread engines, workflow/ralph tools |
 | `jobs/` | Background-job runtime and job_* tools |
