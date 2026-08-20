@@ -19,22 +19,27 @@ dsh-hub/
     └── guard/ todo/ plan/ goal/ hooks/ settings/ credentials/
 ```
 
-## Desktop packager (out-of-box)
+## Desktop packager (out-of-box, multi-DSH)
 
-`packagers/dsh-packager` is a non-invasive packager: point `DSH_DIR` at a `deepseek-harness` checkout and get a desktop installer without patching `dsh`. Plugin hot-plug (`dsh plugin add`) stays via `~/.dsh`.
+`packagers/dsh-packager` is a non-invasive packager: point `DSH_DIR` at **any** `deepseek-harness` checkout/tag and get a desktop installer without patching `dsh`. Plugin hot-plug (`dsh plugin add`) stays via `~/.dsh`.
 
 ```sh
 npm --prefix packagers/dsh-packager install
-npm --prefix packagers/dsh-packager run build -- --dsh-dir deepseek-harness
+npm --prefix packagers/dsh-packager run build -- --dsh-dir deepseek-harness          # master HEAD, e.g. 0.1.0-rc.8
+npm --prefix packagers/dsh-packager run build -- --dsh-dir /tmp/dsh-rc7              # specific tag
 npm --prefix packagers/dsh-packager run dist:win  # or dist / npx electron-packager
 ```
 
-Icons from `deepseek-harness/apps/web/public/favicon.svg` → `packagers/dsh-packager/build/icon.*`, frameless `frame:false` + `Tray` (close hides to tray).
+Icons from `deepseek-harness/apps/web/public/favicon.svg` → `packagers/dsh-packager/build/icon.*`, frameless `frame:false` + `Tray` (close hides to tray, double-click restores).
 
-**Downloads**
+Different `DSH` versions are supported: `scripts/build.mjs` prints `@deepseek-ai/dsh-root@x.y.z` and copies that version's `resources/dsh/package.json` into the app. `dsh-hub`'s `deepseek-harness` tracks `master`, but `DSH_DIR` can override to any tag/commit.
 
-- dsh-packager: https://github.com/Lin-A1/dsh-packager/releases — `dsh-desktop-win32-x64.zip` (portable) + `dsh-desktop Setup 0.1.0.exe` (NSIS)
-- dsh-hub re-export: https://github.com/Lin-A1/dsh-hub/releases — same artifacts
+**Downloads (with DSH version in Notes)**
+
+- dsh-packager: https://github.com/Lin-A1/dsh-packager/releases — `dsh-desktop-win32-x64.zip` (portable, `dsh-desktop.exe`) + `dsh-desktop Setup 0.1.0.exe` (NSIS, needs admin/Developer Mode for `winCodeSign`)
+- dsh-hub re-export: https://github.com/Lin-A1/dsh-hub/releases — same artifacts, `packagers/dsh-packager` pointer
+
+Each `Release` notes the bundled `DSH` version, e.g. `DSH @deepseek-ai/dsh-root@0.1.0-rc.8`.
 
 A plugin goes under the category its capability belongs to, regardless of who
 maintains it. Categories mirror the official
