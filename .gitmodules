@@ -28,3 +28,6 @@
 [submodule "packagers/dsh-packager"]
 	path = packagers/dsh-packager
 	url = https://github.com/Lin-A1/dsh-packager.git
+[submodule "plugins/web/treg"]
+	path = plugins/web/treg
+	url = https://github.com/superdesigndev/treg.git
