@@ -10,3 +10,7 @@
 	path = plugins/terminal/dsh-ssh-terminal
 	url = https://github.com/Lin-A1/dsh-ssh-terminal.git
 	branch = master
+[submodule "plugins/session/dsh-session-rewind"]
+	path = plugins/session/dsh-session-rewind
+	url = https://github.com/Lin-A1/dsh-session-rewind.git
+	branch = master

@@ -26,6 +26,7 @@ plugins sit side by side under the category their capability belongs to.
 | `todo/` | todo_write tool |
 | `plan/` | Plan-mode state and commands |
 | `goal/` | Same-session goal persistence |
+| `session/` | Conversation-history manipulation and durable session behaviors |
 | `hooks/` | Claude Code / Codex hook bridges |
 | `settings/` | User-settings providers |
 | `credentials/` | Credential-reference providers |
