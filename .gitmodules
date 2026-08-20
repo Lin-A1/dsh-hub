@@ -22,3 +22,9 @@
 [submodule "plugins/sandbox/mirage"]
 	path = plugins/sandbox/mirage
 	url = https://github.com/strukto-ai/mirage.git
+[submodule "plugins/memory/memos"]
+	path = plugins/memory/memos
+	url = https://github.com/MemTensor/MemOS.git
+[submodule "packagers/dsh-packager"]
+	path = packagers/dsh-packager
+	url = https://github.com/Lin-A1/dsh-packager.git
