@@ -7,4 +7,4 @@ providers.
 
 | Plugin | Capability |
 |---|---|
-| [`dsh-agent-browser`](dsh-agent-browser/README.md) | Wraps the Vercel `agent-browser` CLI: open/navigate, snapshot, click, fill/type, press, screenshot, eval, get, wait, close; persistent browser session kept alive by the agent-browser daemon |
+| [`dsh-agent-browser`](https://github.com/Lin-A1/dsh-agent-browser) | Wraps the Vercel `agent-browser` CLI: open/navigate, snapshot, click, fill/type, press, screenshot, eval, get, wait, close; persistent browser session kept alive by the agent-browser daemon |
