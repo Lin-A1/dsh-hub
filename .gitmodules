@@ -10,6 +10,15 @@
 	path = plugins/terminal/dsh-ssh-terminal
 	url = https://github.com/Lin-A1/dsh-ssh-terminal.git
 	branch = master
-[submodule "packagers/dsh-packager"]
-	path = packagers/dsh-packager
-	url = https://github.com/Lin-A1/dsh-packager.git
+[submodule "plugins/vision/modlens"]
+	path = plugins/vision/modlens
+	url = https://github.com/liustack/modlens.git
+[submodule "plugins/docs/archify"]
+	path = plugins/docs/archify
+	url = https://github.com/tt-a1i/archify.git
+[submodule "plugins/workflow/ouroboros"]
+	path = plugins/workflow/ouroboros
+	url = https://github.com/Q00/ouroboros.git
+[submodule "plugins/sandbox/mirage"]
+	path = plugins/sandbox/mirage
+	url = https://github.com/strukto-ai/mirage.git
