@@ -10,3 +10,6 @@
 	path = plugins/terminal/dsh-ssh-terminal
 	url = https://github.com/Lin-A1/dsh-ssh-terminal.git
 	branch = master
+[submodule "packagers/dsh-packager"]
+	path = packagers/dsh-packager
+	url = https://github.com/Lin-A1/dsh-packager.git
