@@ -16,9 +16,6 @@
 [submodule "plugins/docs/archify"]
 	path = plugins/docs/archify
 	url = https://github.com/tt-a1i/archify.git
-[submodule "plugins/workflow/ouroboros"]
-	path = plugins/workflow/ouroboros
-	url = https://github.com/Q00/ouroboros.git
 [submodule "plugins/sandbox/mirage"]
 	path = plugins/sandbox/mirage
 	url = https://github.com/strukto-ai/mirage.git
