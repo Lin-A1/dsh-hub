@@ -43,3 +43,9 @@
 [submodule "plugins/web/treg"]
 	path = plugins/web/treg
 	url = https://github.com/superdesigndev/treg.git
+[submodule "plugins/workflow/dsh-routing-suite"]
+	path = plugins/workflow/dsh-routing-suite
+	url = https://github.com/yjh051108/dsh-routing-suite.git
+[submodule "plugins/skill/dsh-anchored-standard"]
+	path = plugins/skill/dsh-anchored-standard
+	url = https://github.com/xiaobright/dsh-anchored-standard.git
