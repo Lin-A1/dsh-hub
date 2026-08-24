@@ -329,85 +329,113 @@
 </ul>
 
 <h2 id="s5">五、四方方案对比：dsh vs opencode vs Codex vs Claude Code</h2>
+<p>我们逐一研读了四家的实现：dsh 本仓源码；opencode <code>packages/opencode/src/image/image.ts</code>（photon WASM 方案）；OpenAI Codex <code>codex-rs/core/src/image_preparation.rs</code> + <code>codex-rs/utils/image/src/lib.rs</code> + <code>compact_remote_v2_images.rs</code>（Rust 实现）；Claude Code 官方 Vision 文档与其 Read 工具行为。四家面对的协议、用户形态、产品定位各不相同，因此各自演化出了不同但<strong>各自自洽</strong>的图像方案。这一章先把每家的方案当作独立设计来讲清楚，再做维度对照。</p>
 
-<p>我们逐一研读了四家的实现：dsh 本仓源码；opencode <code>packages/opencode/src/image/image.ts</code>（photon WASM 方案）；OpenAI Codex <code>codex-rs/core/src/image_preparation.rs</code> + <code>codex-rs/utils/image/src/lib.rs</code> + <code>compact_remote_v2_images.rs</code>（Rust 实现）；Claude Code 官方 Vision 文档与其 Read 工具行为。</p>
+<h3>5.0 四种方案的完整画像</h3>
 
-<h3>5.1 先说清楚各家面对的协议约束</h3>
-
-<table>
-<tr><th></th><th>传输形态</th><th>服务端缓存</th></tr>
-<tr><td><strong>DeepSeek（dsh 主目标）</strong></td><td>base64 data URL 或 Files API <code>file_id</code></td><td>prefix caching（自动）</td></tr>
-<tr><td><strong>OpenAI（Codex 目标）</strong></td><td>Responses API：base64 data URL（<code>input_image</code>）；不支持远程 URL 直发</td><td>automatic prefix caching</td></tr>
-<tr><td><strong>Anthropic（Claude Code 目标）</strong></td><td>Messages API：base64 <code>source</code>（也支持 URL source）</td><td>prompt caching（需显式 <code>cache_control</code> 标记）</td></tr>
-</table>
-
-<p>三家都没有"客户端长期对象存储"的概念——图要么每次随请求重发，要么靠 provider 自己的历史管理。<strong>这就是各客户端图像管线的分水岭：你替 provider 管多少？</strong></p>
-
-<h3>5.2 尺寸与压缩策略对比</h3>
-
-<table>
-<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
-<tr><td>最大边</td><td>入库 2048px（可配）</td><td>2000×2000</td><td>high-detail 2048px；unified 模式 6000px</td><td>建议长边 ≤1568px；&gt;20 张/请求时限 2000px</td></tr>
-<tr><td>缩放算法</td><td>sharp/libvips（Lanczos 类）</td><td>photon WASM Lanczos3</td><td>Rust image crate Triangle 滤镜</td><td>客户端自理（官方给缩放公式）</td></tr>
-<tr><td>格式分支</td><td>按色彩复杂度选 PNG/WebP/JPEG 三分支</td><td>先 PNG 再 JPEG 质量 80/85/70/55/40</td><td>统一编码器</td><td>不做客户端转换（原样发）</td></tr>
-<tr><td>EXIF/色彩管理</td><td>✅ 矫正+剥离+sRGB 强制</td><td>❌ 未显式处理</td><td>✅ 处理</td><td>❌ 客户端自理</td></tr>
-<tr><td>动图</td><td>明确排除（取首帧）</td><td>未显式处理</td><td>未显式处理</td><td>支持有限动图</td></tr>
-</table>
-
-<h3>5.3 存储与重放对比</h3>
-
-<table>
-<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
-<tr><td>持久对象库</td><td>✅ sha256 内容寻址，<code>&lt;DSH_HOME&gt;/attachments/</code></td><td>❌ 无，data URL 存于消息</td><td>❌ 无独立库（rollout 文件记录原始项）</td><td>❌ 无（会话 jsonl 记 base64）</td></tr>
-<tr><td>重启/fork 后可用</td><td>✅ 从对象库重建</td><td>⚠️ 取决于会话文件留存</td><td>⚠️ rollout 含原始数据</td><td>⚠️ 同左</td></tr>
-<tr><td>日志体积</td><td>只存引用，与图片体积解耦</td><td>含完整 base64</td><td>含原始数据</td><td>含完整 base64</td></tr>
-</table>
-
-<h3>5.4 缓存体系对比</h3>
-
-<table>
-<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
-<tr><td>客户端编码缓存</td><td>✅ 两级：本地磁盘持久投影缓存 + 远端上传索引</td><td>❌ 每次 normalize 重算</td><td>✅ 进程内 LRU（32 条 / 64MiB，sha1 键）</td><td>❌ 无</td></tr>
-<tr><td>跨会话复用</td><td>✅ 上传索引持久化，同图跨会话零重传</td><td>❌</td><td>⚠️ 仅进程生命周期内</td><td>❌</td></tr>
-<tr><td>字节级确定性</td><td>✅ 设计目标（transformVersion 版本化）</td><td>❌ 输出可能漂移</td><td>✅ 同版本下确定</td><td>—（不转换）</td></tr>
-</table>
-
-<h3>5.5 历史上下文里的图片治理（差异最大的维度）</h3>
-
-<table>
-<tr><th>策略</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
-<tr><td>老图处理</td><td>compaction 时 pruner 改写大结果，摘要替换老区间；不可分割大图明确拒绝并上报</td><td>无专门机制（历史全量重发）</td><td><strong>strip_image_details</strong>：lite 模型路由时剥掉历史图的 detail 字段；<strong>token 预算截断</strong>：裁历史时保证"图+相邻标签"原子保留或整体丢弃</td><td>依赖开发者手动管理（官方建议自行删旧图块或用 prompt caching）</td></tr>
-<tr><td>超限行为</td><td>quantum 整张剔除（确定性）</td><td>迭代缩放 32 次后报错</td><td>占位符替换（"image content omitted because…"）</td><td>API 直接拒绝</td></tr>
-<tr><td>给模型的反馈</td><td>剔除可见于日志</td><td>报错终止</td><td><strong>ImageResizeNotice</strong>：以 <code>images.resize_notice</code> 片段告知模型"第 N/M 张已从 WxH 缩至 W'xH'"</td><td>无</td></tr>
-</table>
-
-<p>Codex 有几个值得单独点赞的设计：</p>
+<h4>opencode：单点归一化器（photon WASM）</h4>
+<p>opencode 的图像处理只有一个文件（<code>image.ts</code>），职责边界非常清晰：<strong>在发送前把任意图变成 provider 能接受的一份 base64</strong>。</p>
 <ul>
-<li><strong>ImageResizeNotice</strong>——缩图后显式告知模型"你的图被缩了，原始多大、现在多大"。模型因此知道自己在看缩略图，坐标判断更谨慎。</li>
-<li><strong>detail 分级</strong>——支持 high/low/auto/original 多档，lite 模型自动剥离历史图的 detail 以省 token。</li>
-<li><strong>patch 预算</strong>——不只限尺寸还限 patch 总数（high 2500 / unified 10000），直接对应 OpenAI 计费粒度。</li>
+<li><strong>解码/缩放引擎用 photon（Rust 编译的 WASM）</strong>——为了跨平台一致性：CLI 要在 macOS/Linux/Windows 上产出完全相同的缩放结果，且以单二进制分发时不需要带原生 sharp/libvips 依赖。典型的"分发形态决定技术选型"。</li>
+<li><strong>迭代降质策略</strong>：先按上限缩放一次（Lanczos3），然后 PNG 一档 + JPEG 五档质量（80/85/70/55/40）逐个试，哪个先塞进 <code>maxBase64Bytes</code>（默认 5MiB）就用哪个；还塞不进就尺寸 ×0.75 再来一轮，最多 32 轮。</li>
+<li><strong>可配置</strong>：<code>attachment.image.{auto_resize, max_width, max_height, max_base64_bytes}</code> 全部走配置，关掉 auto_resize 就变成"超限即报错"。</li>
+<li><strong>不做的事同样明确</strong>：不持久化（data URL 直接进会话消息）、不做 EXIF 矫正、不做跨请求缓存——它面向个人 CLI 单轮交互场景，会话生命周期短，持久化的收益覆盖不了复杂度。</li>
+</ul>
+<p>这套设计的自洽性在于：<strong>所有状态都交给会话文件和 provider，客户端只做无状态的最后一道归一化</strong>。</p>
+
+<h4>Codex：模型上下文管理器（Rust core）</h4>
+<p>Codex 的图像代码分散在多处，但主线清晰：<strong>图片是上下文预算的一部分，要像管理文本 token 一样管理图片 token</strong>。</p>
+<ul>
+<li><strong>两套尺寸预算对应两种计费模式</strong>：<code>HIGH_DETAIL_LIMITS</code>（长边 2048 / patch ≤2500，对齐 OpenAI high-detail 计费粒度）与 <code>UNIFIED_IMAGE_LIMITS</code>（6000 / 10000），按模型能力与 feature flag 切换——预算直接绑定计费方式。</li>
+<li><strong>进程内 LRU 编码缓存</strong>（32 条 / 64MiB，sha1 键）：同图同进程重复出现跳过重编码。选择"进程内"而非"磁盘持久"，与其 rollout 文件已保存原始数据的重放策略配套——原始字节不丢，缓存只是加速。</li>
+<li><strong><code>strip_image_details</code></strong>：路由到 responses-lite 模型时剥掉历史图片的 detail 字段——lite 模型按低精度计费，历史图保留高 detail 字段纯属浪费。</li>
+<li><strong><code>ImageResizeNotice</code></strong>：缩图后生成 <code>images.resize_notice</code> 上下文片段，明确告诉模型"第 N/M 张图已从 W×H 缩至 W'×H'"。解决缩略图的真实问题：模型若不知道看的是缩略图，报告的坐标就是错的。</li>
+<li><strong>原子化 token 截断</strong>：按 token 预算裁剪含图历史时，把"图片+相邻 harness 标签文本"视为不可分割单元，整体保留或整体丢弃，不会撕裂。</li>
+</ul>
+<p>这套设计的自洽性在于：<strong>OpenAI 协议没有 file_id 引用形态可用，图片必然每次随请求重发，所以治理重心放在"每次重发的成本控制"与"模型对自身输入的元认知"上</strong>。</p>
+
+<h4>Claude Code：协议原生直发</h4>
+<p>Claude Code 没有专门的图像预处理管线——依赖 Anthropic Messages API 自身约束体系工作：</p>
+<ul>
+<li>图片以 base64 source（或 URL source）直接放进 message content，客户端不做转码；</li>
+<li>遵循 API 侧限制：单图最大 8000×8000px、base64 后 ≤5MB；<strong>单请求 &gt;20 个图片块时触发更严格的每图尺寸限制</strong>（需缩到 2000px 以内否则整请求被拒）；</li>
+<li>官方文档给出公式化最佳实践："目标长边 = 1568px 时 token 效率最优"，让调用方自行压缩；</li>
+<li>历史老图靠开发者自行删除旧 content block 或使用 prompt caching 标记管理。</li>
+</ul>
+<p>这套设计的自洽性在于：Anthropic 的 prompt caching 是<strong>显式标记式</strong>的（<code>cache_control</code> 由调用方放置），图片块天然可放在缓存断点之后，配合 API 限制报错，把治理责任留在调用方反而灵活。其 Read 工具原生支持读图返回给模型，工具截图走 tool_result 通道与用户贴图共用同一 base64 通路。</p>
+
+<h4>dsh：内容寻址的三级流水线</h4>
+<p>dsh 面向的场景有一个关键差异：<strong>DeepSeek 提供了 Files API（file_id 引用形态），且 dsh 定位为长期运行、会话可 fork 重放的部署型产品</strong>。这两个条件决定了方案形态：</p>
+<ul>
+<li>服务端支持引用 → 把"上传一次、到处引用"做成一等公民：规范化入库 → 投影 → 上传索引三级流水线（详见第三章）；</li>
+<li>会话要可审计重放 → 日志必须与图片字节解耦——内容寻址存储让日志只记 <code>sha256:</code> 引用；</li>
+<li>长会话高频多图 → 投影缓存与 KV-cache 字节级稳定性成为核心指标，transformVersion 版本化由此而来。</li>
 </ul>
 
-<h3>5.6 传输路径对比</h3>
-
+<h3>5.1 协议约束对照</h3>
+<p>四家设计差异首先来自各自 provider 协议提供了什么：</p>
 <table>
-<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
-<tr><td>传输形态</td><td><strong>file_id 优先 + base64 回退</strong>双路径</td><td>仅 base64 内联</td><td>仅 base64 内联（Responses API）</td><td>base64 为主（亦支持 URL source）</td></tr>
-<tr><td>上传去重</td><td>✅ 持久索引，跨会话复用</td><td>—</td><td>—</td><td>—</td></tr>
-<tr><td>失败回退</td><td>✅ Files 失败自动降级内联</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><th></th><th>传输形态</th><th>服务端缓存</th><th>可用引用机制</th></tr>
+<tr><td><strong>DeepSeek（dsh 目标）</strong></td><td>base64 data URL 或 Files API <code>file_id</code></td><td>prefix caching（自动）</td><td>有（Files API）</td></tr>
+<tr><td><strong>OpenAI（Codex 目标）</strong></td><td>Responses API：base64 data URL（input_image）；不支持远程 URL 直发</td><td>automatic prefix caching</td><td>无通用图片引用</td></tr>
+<tr><td><strong>Anthropic（Claude Code 目标）</strong></td><td>Messages API：base64 source / URL source</td><td>prompt caching（显式标记）</td><td>无通用图片引用</td></tr>
+</table>
+<p>三家 provider 都不提供"客户端长期对象存储"原语。<strong>dsh 选择用 DeepSeek Files API 自己补上引用层；Codex/Claude Code 接受"图片随请求重发"的前提，把精力投向重发成本的控制</strong>——两条都成立的路线。</p>
+
+<h3>5.2 维度对照（机制描述）</h3>
+
+<h4>触发时机与处理范围</h4>
+<table>
+<tr><th></th><th>处理触发点</th><th>处理范围</th><th>持久化</th></tr>
+<tr><td>dsh</td><td>提交时入库 + 每次请求投影</td><td>全量规范化 + 投影按预算</td><td>双层：对象库 + 上传索引落盘</td></tr>
+<tr><td>opencode</td><td>仅发送前 normalize 一次</td><td>单次缩放/编码</td><td>无（结果进会话消息）</td></tr>
+<tr><td>Codex</td><td>每次组装请求时 prepare</td><td>缩放至预算 + detail 决策</td><td>进程内 LRU（rollout 存原始数据）</td></tr>
+<tr><td>Claude Code</td><td>不转换，原样发送</td><td>无</td><td>无</td></tr>
 </table>
 
-<h3>5.7 总结：四种哲学</h3>
-
+<h4>尺寸与格式策略</h4>
 <table>
-<tr><th></th><th>一句话哲学</th><th>适用场景</th></tr>
-<tr><td><strong>dsh</strong></td><td>"图片是一等公民资产：存一次、投影缓存、引用传输、全程可审计"</td><td>生产级多模态长会话、成本敏感、需审计重放的团队部署</td></tr>
-<tr><td><strong>opencode</strong></td><td>"发送前把图弄到能塞为止"——轻量单点归一化</td><td>个人 CLI 使用、单轮单图、快速上手</td></tr>
-<tr><td><strong>Codex</strong></td><td>"管好模型眼前的上下文"——精细的 resize 通知、detail 分级、patch 预算、历史 token 化裁剪</td><td>专业编码场景，图片多为工具产出，重视模型对自身输入的元认知</td></tr>
-<tr><td><strong>Claude Code</strong></td><td>"协议原生，简单直接"——base64 直发 + 依靠 Anthropic API 的限制报错与 prompt caching</td><td>已在 Anthropic 生态内，图量可控</td></tr>
+<tr><th></th><th>最大边</th><th>缩放算法</th><th>格式决策</th><th>EXIF/色彩</th></tr>
+<tr><td>dsh</td><td>2048px 入库（可配）；投影按像素预算 640k</td><td>sharp/libvips</td><td>色彩复杂度三分支逐档</td><td>矫正+剥离+sRGB 强制</td></tr>
+<tr><td>opencode</td><td>2000×2000</td><td>photon WASM Lanczos3</td><td>先 PNG 后 JPEG 五档质量</td><td>依赖 photon 默认行为</td></tr>
+<tr><td>Codex</td><td>high 2048 / unified 6000（patch 双限 2500/10000）</td><td>image crate Triangle</td><td>统一编码器输出</td><td>image crate 解码处理</td></tr>
+<tr><td>Claude Code</td><td>建议 ≤1568px；&gt;20 图限 2000px</td><td>调用方自理</td><td>不转换</td><td>调用方自理</td></tr>
 </table>
 
-<blockquote><strong>有趣的观察</strong>：dsh 和 Codex 各自做到了一半的"完备"。dsh 强在存储层（内容寻址 + 双级缓存 + 跨会话复用），Codex 强在上下文层（resize 通知 + detail 分级 + 原子截断）。理论上二者结合才是终极形态；实际上 dsh 的 read_image 坐标比例尺已经在朝 Codex 的 ImageResizeNotice 方向演进——都是让模型知道自己看到的是什么规格的图。</blockquote>
+<h4>编码结果缓存</h4>
+<table>
+<tr><th></th><th>缓存位置</th><th>键设计</th><th>生命周期</th></tr>
+<tr><td>dsh</td><td>本地磁盘投影缓存 + 远端上传索引</td><td>(attachmentId, transformVersion, pixelBudget, byteCap, encoderSettings)</td><td>持久；transformVersion 升级自然淘汰</td></tr>
+<tr><td>opencode</td><td>无</td><td>—</td><td>—</td></tr>
+<tr><td>Codex</td><td>进程内 LRU 32 条 / 64MiB</td><td>sha1(path + mode + limits)</td><td>进程退出即失</td></tr>
+<tr><td>Claude Code</td><td>无</td><td>—</td><td>—</td></tr>
+</table>
+
+<h4>历史图片的上下文治理</h4>
+<table>
+<tr><th></th><th>老图策略</th><th>超限行为</th><th>对模型的反馈</th></tr>
+<tr><td>dsh</td><td>compaction 时 pruner 改写大结果后摘要替换老区间；不可分割大图明确拒绝并上报</td><td>quantum 步长整张剔除（确定性算法）</td><td>剔除记录于会话日志</td></tr>
+<tr><td>opencode</td><td>无专门机制（历史全量重发）</td><td>迭代缩放 32 轮后抛 SizeError</td><td>错误含原始/最大尺寸</td></tr>
+<tr><td>Codex</td><td>lite 路由剥 detail；token 预算截断保证"图+相邻标签"原子去留</td><td>占位符替换（按错误类别区分文案）</td><td>ImageResizeNotice 片段（第 N/M 张、原尺寸→新尺寸）</td></tr>
+<tr><td>Claude Code</td><td>开发者手动删旧 block 或用 prompt caching</td><td>API 返回 invalid_request_error</td><td>无（API 报错信息）</td></tr>
+</table>
+
+<h4>传输路径</h4>
+<table>
+<tr><th></th><th>形态</th><th>引用复用</th><th>回退链路</th></tr>
+<tr><td>dsh</td><td>Files API file_id 优先，base64 内联回退</td><td>持久索引跨会话复用，过期自动续传</td><td>Files 超时/配额错误自动降级内联</td></tr>
+<tr><td>opencode</td><td>base64 data URL</td><td>—</td><td>—</td></tr>
+<tr><td>Codex</td><td>base64 data URL（Responses input_image）</td><td>—</td><td>—</td></tr>
+<tr><td>Claude Code</td><td>base64 source（亦支持 URL source）</td><td>—</td><td>—</td></tr>
+</table>
+
+<h3>5.3 设计取舍解读</h3>
+<p>四套方案没有高下之分，只有约束不同。核心取舍摆在四条决策轴上：</p>
+<p><strong>轴一：状态放哪里？</strong> opencode 和 Claude Code 把状态交给外部（会话文件/provider），客户端无状态——实现简单、无迁移负担。Codex 放进程内存（LRU）。dsh 放磁盘（对象库+上传索引），换来跨会话复用与可审计重放，代价是要处理版本迁移、文件锁、配额回收。</p>
+<p><strong>轴二：信任谁做压缩？</strong> Claude Code 完全信任调用方/API（不转换）。opencode 和 dsh 在客户端压缩，但确定性要求不同——dsh 因缓存键含编码输出，必须锁定编码器到字节级；opencode 输出直接消费允许漂移。Codex 用 Rust image crate 取中。</p>
+<p><strong>轴三：告诉模型多少？</strong> 大多数方案默认模型不需要知道图片处理历史。Codex 唯一显式反向通知（ImageResizeNotice），源于其场景：编码任务的截图坐标精度直接影响工具调用成败。dsh 的 read_image 坐标比例尺走了同一条思路。</p>
+<p><strong>轴四：引用还是内联？</strong> 由 provider 决定。有 Files API（DeepSeek）就有机会做引用复用；没有就只能内联，于是治理重心滑向"如何让每次重发更便宜"——这正是 Codex strip_image_details 与 Claude Code prompt caching 各自的出发点。</p>
+<p>理解这四条轴后，再看任何新的智能体产品图像方案，都可以快速定位其在每条轴上的站位，以及站位背后的协议与产品约束。</p>
 
 <h2 id="s6">六、实践建议</h2>
 

@@ -277,79 +277,130 @@ rc.2 给 `tool-fs read_image` 工具加了两个返回值：**缩略图的实际
 
 ## 五、四方方案对比：dsh vs opencode vs Codex vs Claude Code
 
-我们逐一读了四家的实现（dsh 本仓源码；opencode `packages/opencode/src/image/image.ts`；Codex `codex-rs/core/src/image_preparation.rs`、`codex-rs/utils/image/src/lib.rs`、`compact_remote_v2_images.rs`；Claude Code 官方 vision 文档与其 Read 工具行为）。
+我们逐一研读了四家的实现（dsh 本仓源码；opencode `packages/opencode/src/image/image.ts`；Codex `codex-rs/core/src/image_preparation.rs`、`codex-rs/utils/image/src/lib.rs`、`compact_remote_v2_images.rs`；Claude Code 官方 vision 文档与其 Read 工具行为）。四家面对的协议、用户形态、产品定位各不相同，因此各自演化出了不同但**各自自洽**的图像方案。这一章先把每家的方案当作独立设计来讲清楚，再做维度对照。
 
-### 5.1 先说清楚各家面对的协议约束
+### 5.0 四种方案的完整画像
 
-| | 传输形态 | 服务端缓存 |
-|---|---|---|
-| **DeepSeek（dsh 的主目标）** | base64 data URL 或 Files API `file_id` | prefix caching |
-| **OpenAI（Codex 的目标）** | Responses API：base64 data URL（`input_image`）；不支持远程 URL 直发 | automatic prefix caching |
-| **Anthropic（Claude Code 的目标）** | Messages API：base64 `source`（也支持 URL source） | prompt caching（需显式 `cache_control` 标记） |
+#### opencode：单点归一化器（photon WASM）
 
-三家都没有"客户端长期对象存储"的概念——**图要么每次随请求重发，要么靠 provider 自己的历史管理**。这就是各客户端图像管线的分水岭：你替 provider 管多少？
+opencode 的图像处理只有一个文件（`image.ts`），职责边界划得非常清晰：**在发送前把任意图变成 provider 能接受的一份 base64**。
 
-### 5.2 逐维度对比
+- **解码/缩放引擎用 photon（Rust 编译的 WASM）**——选它是为了跨平台一致性：CLI 要在 macOS/Linux/Windows 上产出完全相同的缩放结果，且以单二进制分发时不需要带原生 sharp/libvips 依赖。这是一个典型的"分发形态决定技术选型"。
+- **迭代降质策略**：先按上限缩放一次（Lanczos3），然后 PNG 一档 + JPEG 五档质量（80/85/70/55/40）逐个试，哪个先塞进 `maxBase64Bytes`（默认 5MiB）就用哪个；还塞不进就尺寸 ×0.75 再来一轮，最多 32 轮。
+- **可配置**：`attachment.image.{auto_resize, max_width, max_height, max_base64_bytes}` 全部走配置，关掉 auto_resize 就变成"超限即报错"。
+- **不做的事同样明确**：不持久化（data URL 直接进会话消息）、不做 EXIF 矫正、不做跨请求缓存——因为它面向的是个人 CLI 单轮交互场景，会话生命周期短，持久化的收益覆盖不了复杂度。
 
-#### 尺寸与压缩策略
+这套设计的自洽性在于：**所有状态都交给会话文件和 provider，客户端只做无状态的最后一道归一化**。
 
-| 维度 | **dsh** | **opencode** | **Codex** | **Claude Code** |
+#### Codex：模型上下文管理器（Rust core）
+
+Codex 的图像代码分散在 `image_preparation.rs`、`utils/image`、`compact_remote_v2_images.rs` 等多处，但它有一条清晰的主线：**图片是上下文预算的一部分，要像管理文本 token 一样管理图片 token**。
+
+- **两套尺寸预算对应两种计费模式**：`HIGH_DETAIL_LIMITS`（长边 2048 / patch ≤2500，对齐 OpenAI high-detail 计费粒度）与 `UNIFIED_IMAGE_LIMITS`（6000 / 10000），按模型能力与 feature flag 切换——预算直接绑定计费方式，这是 OpenAI 协议原生才有的精确度。
+- **进程内 LRU 编码缓存**（32 条 / 64MiB，sha1 键）：同一张图在同一进程内重复出现时跳过重编码。选择"进程内"而非"磁盘持久"，与其 rollout 文件本身已保存原始数据的重放策略配套——原始字节不丢，缓存只是加速。
+- **`strip_image_details`**：当路由到 responses-lite 模型时，把历史消息里图片的 detail 字段剥掉。lite 模型按低精度计费，历史图保留高 detail 字段纯属浪费。
+- **`ImageResizeNotice`**：缩图后生成一个 `images.resize_notice` 上下文片段，明确告诉模型"第 N/M 张图已从 W×H 缩至 W'×H'"。这解决了缩略图的一个真实问题：模型若不知道自己看的是缩略图，报告的坐标就是错的。
+- **原子化 token 截断**：按 token 预算裁剪含图历史时，把"图片 + 它前后的 harness 标签文本"视为不可分割单元，要么整体保留要么整体丢弃，不会出现"标签在图没了"的撕裂状态。
+
+这套设计的自洽性在于：**OpenAI 协议没有 file_id 引用形态可用，图片必然每次随请求重发，所以治理重心放在"每次重发的成本控制"与"模型对自身输入的元认知"上**。
+
+#### Claude Code：协议原生直发
+
+Claude Code 没有专门的图像预处理管线——它依赖 Anthropic Messages API 自身的约束体系工作：
+
+- 图片以 base64 source（或 URL source）直接放进 message content，客户端不做转码；
+- 遵循 API 侧限制：单图最大 8000×8000px、base64 后 ≤5MB；**单请求 >20 个图片块时触发更严格的每图尺寸限制**（需缩到 2000px 以内否则整请求被拒）；
+- 官方文档给出的最佳实践是公式化的：给开发者一张"目标长边 = 1568px 时 token 效率最优"的换算表，让调用方自行决定压缩；
+- 历史里的老图靠开发者自行删除旧 content block 或使用 prompt caching 标记来管理。
+
+这套设计的自洽性在于：Anthropic 的 prompt caching 是**显式标记式**的（`cache_control` 由调用方放置），图片块天然可以放在缓存断点之后，配合 API 的限制报错，把治理责任留在调用方反而灵活。另外它的 Read 工具原生支持读图片返回给模型，工具产出的截图走 tool_result 通道，与用户贴图共用同一条 base64 通路。
+
+#### dsh：内容寻址的三级流水线
+
+dsh 面向的场景与前三家有一个关键差异：**DeepSeek 提供了 Files API（file_id 引用形态），且 dsh 定位为需要长期运行、会话可 fork 重放的部署型产品**。这两个条件决定了它的方案形态：
+
+- 既然服务端支持引用，就把"上传一次、到处引用"做成一等公民：规范化入库 → 投影 → 上传索引三级流水线（详见第三章）；
+- 既然会话要可审计重放，日志就必须与图片字节解耦——内容寻址存储让日志只记 `sha256:` 引用；
+- 既然是长会话高频多图，投影缓存与 KV-cache 的字节级稳定性就成为核心指标，transformVersion 版本化由此而来。
+
+### 5.1 协议约束对照
+
+四家的设计差异首先来自它们各自的 provider 协议提供了什么：
+
+| | 传输形态 | 服务端缓存 | 可用的引用机制 |
+|---|---|---|---|
+| **DeepSeek（dsh 目标）** | base64 data URL 或 Files API `file_id` | prefix caching（自动） | ✅ 有（Files API） |
+| **OpenAI（Codex 目标）** | Responses API：base64 data URL（`input_image`）；不支持远程 URL 直发 | automatic prefix caching | ❌ 无通用图片引用 |
+| **Anthropic（Claude Code 目标）** | Messages API：base64 source / URL source | prompt caching（显式标记） | ❌ 无通用图片引用 |
+
+三家 provider 都不提供"客户端长期对象存储"的原语。**dsh 选择用 DeepSeek Files API 自己补上引用层；Codex/Claude Code 则接受"图片随请求重发"的前提，把精力投向重发成本的控制**。这是两条都成立的路线。
+
+### 5.2 维度对照
+
+以下表格描述各方案在相同维度上的具体做法（机制本身，非优劣评判）：
+
+#### 触发时机与处理范围
+
+| | 处理触发点 | 处理范围 | 持久化 |
+|---|---|---|---|
+| dsh | 用户提交入库 + 每次请求投影 | 入库全量规范化 + 投影按预算 | 双层：对象库 + 上传索引落盘 |
+| opencode | 仅发送前 normalize 一次 | 单次缩放/编码 | 无（结果进会话消息） |
+| Codex | 每次组装请求时 prepare | 缩放至预算 + detail 决策 | 进程内 LRU（rollout 存原始数据） |
+| Claude Code | 不转换，原样发送 | 无 | 无 |
+
+#### 尺寸与格式策略
+
+| | 最大边 | 缩放算法 | 格式决策 | EXIF/色彩 |
 |---|---|---|---|---|
-| 最大边 | 入库 2048px（可配） | 2000×2000 | high-detail 2048px；unified 模式 6000px | 官方建议长边 ≤1568px；>20 张/请求时限 2000px |
-| 缩放算法 | sharp/libvips（Lanczos 类） | photon WASM Lanczos3 | Rust `image` crate Triangle 滤镜 | 客户端自行处理（官方文档给出缩放公式） |
-| 格式分支 | 按色彩复杂度选 PNG/WebP/JPEG 三分支 | 先试 PNG，再 JPEG 质量 80/85/70/55/40 | 统一编码器（image crate） | 不做客户端转换（原样发，超限报错） |
-| EXIF/色彩管理 | ✅ 矫正+剥离+sRGB 强制 | ❌ 未显式处理 | ✅ 处理（image crate 解码） | ❌ 客户端自理 |
-| 动图 | 明确排除（取首帧） | 未显式处理 | 未显式处理 | 支持 GIF 首帧外还支持有限动图 |
+| dsh | 2048px 入库（可配）；投影按像素预算 640k | sharp/libvips | 色彩复杂度三分支（PNG/WebP/JPEG 各自逐档） | 矫正 + 剥离 + sRGB 强制 |
+| opencode | 2000×2000 | photon WASM Lanczos3 | 先 PNG 后 JPEG 五档质量 | 依赖 photon 解码默认行为 |
+| Codex | high 2048 / unified 6000（patch 数双限 2500/10000） | image crate Triangle | 统一编码器输出 | image crate 解码处理 |
+| Claude Code | 建议 ≤1568px；>20 图限 2000px | 调用方自理 | 不转换 | 调用方自理 |
 
-#### 存储与重放
+#### 编码结果缓存
 
-| 维度 | dsh | opencode | Codex | Claude Code |
-|---|---|---|---|---|
-| 持久对象库 | ✅ sha256 内容寻址，`<DSH_HOME>/attachments/` | ❌ 无，data URL 存在会话消息里 | ❌ 无独立库（rollout 文件记录原始项） | ❌ 无（会话 jsonl 记录 base64） |
-| 重启/fork 后图片可用 | ✅ 从对象库重建 | ⚠️ 取决于会话文件是否还在 | ⚠️ rollout 文件含原始数据 | ⚠️ 同左 |
-| 日志体积 | 只存引用，与图片体积解耦 | 含完整 base64 | 含原始数据 | 含完整 base64 |
+| | 缓存位置 | 键设计 | 生命周期 |
+|---|---|---|---|
+| dsh | 本地磁盘（投影缓存）+ 远端（上传索引） | `(attachmentId, transformVersion, pixelBudget, byteCap, encoderSettings)` | 持久，transformVersion 升级自然淘汰 |
+| opencode | 无 | — | — |
+| Codex | 进程内 LRU 32 条 / 64MiB | sha1(path + mode + limits) | 进程退出即失 |
+| Claude Code | 无 | — | — |
 
-#### 缓存体系
+#### 历史图片的上下文治理
 
-| 维度 | dsh | opencode | Codex | Claude Code |
-|---|---|---|---|---|
-| 客户端编码缓存 | ✅ 两级：本地投影缓存（磁盘持久）+ 远端上传索引 | ❌ 每次 normalize 重算 | ✅ 进程内 LRU（32 条 / 64MiB，sha1 键） | ❌ 无 |
-| 跨会话复用 | ✅ 上传索引持久化，同图跨会话零重传 | ❌ | ⚠️ 仅进程生命周期内 | ❌ |
-| 字节级确定性 | ✅ 设计目标（transformVersion 版本化） | ❌ 输出可能漂移 | ✅（同版本下确定） | —（不转换） |
-
-#### 历史上下文里的图片治理
-
-这是四方差异最大、也最能体现产品成熟度的维度：
-
-| 策略 | dsh | opencode | Codex | Claude Code |
-|---|---|---|---|---|
-| 老图处理 | compaction 时先 pruner 改写大结果，摘要替换老区间；不可分割大图明确拒绝并上报 | 无专门机制（历史全量重发） | **`strip_image_details`**：lite 模型路由时把历史图片的 detail 字段剥掉；**token 预算截断**：按 token 数裁历史时保证"图+相邻标签"原子保留或整体丢弃，不撕半张 | 依赖开发者手动管理（官方建议自行删除旧图块或用 prompt caching） |
-| 超限行为 | quantum 整张剔除（确定性） | 迭代缩放 32 次后报错 | 占位符替换（`IMAGE_TOO_LARGE_PLACEHOLDER`："image content omitted because…"） | API 直接拒绝（invalid_request_error） |
-| 给模型的反馈 | 剔除可见于日志 | 报错终止 | **ImageResizeNotice**：以 `images.resize_notice` 片段告知模型"第 N/M 张图已从 WxH 缩至 W'xH'" | 无 |
-
-Codex 这里有几个值得单独点赞的设计：
-1. **ImageResizeNotice**——缩图后会以一段上下文片段显式告诉模型"你的图被缩了，原始是多大、现在是多大"。模型因此知道自己在看缩略图，坐标判断会更谨慎。
-2. **detail 分级**——支持 `high/low/auto/original` 多档 detail，lite 模型自动剥离历史图的 detail 以省 token。
-3. **patch 预算**——不只限尺寸，还限 patch 总数（high 2500 / unified 10000），直接对应 OpenAI 的计费粒度。
+| | 老图策略 | 超限行为 | 对模型的反馈 |
+|---|---|---|---|
+| dsh | compaction 时 pruner 改写大结果后摘要替换老区间；不可分割大图明确拒绝并上报 | quantum 步长整张剔除（确定性算法） | 剔除记录于会话日志 |
+| opencode | 无专门机制（历史全量重发） | 迭代缩放 32 轮后抛 SizeError | 错误信息含原始/最大尺寸 |
+| Codex | lite 路由剥 detail；token 预算截断保证"图+相邻标签"原子去留 | 占位符替换（IMAGE_TOO_LARGE_PLACEHOLDER 等，按错误类别区分文案） | ImageResizeNotice 上下文片段（第 N/M 张、原尺寸→新尺寸） |
+| Claude Code | 开发者手动删旧 block 或用 prompt caching | API 返回 invalid_request_error | 无（API 报错信息） |
 
 #### 传输路径
 
-| 维度 | dsh | opencode | Codex | Claude Code |
-|---|---|---|---|---|
-| 传输形态 | **file_id 优先 + base64 回退**双路径 | 仅 base64 内联 | 仅 base64 内联（Responses API） | base64 为主（亦支持 URL source） |
-| 上传去重 | ✅ 持久索引，跨会话复用 | — | — | — |
-| 失败回退 | ✅ Files 失败自动降级内联 | — | — | — |
+| | 形态 | 引用复用 | 回退链路 |
+|---|---|---|---|
+| dsh | Files API file_id 优先，base64 内联回退 | 持久索引跨会话复用，过期自动续传 | Files 超时/配额错误 → 自动降级内联 |
+| opencode | base64 data URL | — | — |
+| Codex | base64 data URL（Responses input_image） | — | — |
+| Claude Code | base64 source（亦支持 URL source） | — | — |
 
-### 5.3 总结：四种哲学
+### 5.3 设计取舍解读
 
-| | 一句话哲学 | 适用场景 |
-|---|---|---|
-| **dsh** | "图片是一等公民资产：存一次、投影缓存、引用传输、全程可审计" | 生产级多模态长会话、成本敏感、需审计重放的团队部署 |
-| **opencode** | "发送前把图弄到能塞为止"——轻量单点归一化 | 个人 CLI 使用、单轮单图、快速上手 |
-| **Codex** | "管好模型眼前的上下文"——精细的 resize 通知、detail 分级、patch 预算、历史 token 化裁剪 | 专业编码场景，图片多为工具产出（截图/渲染），重视模型对自身输入的元认知 |
-| **Claude Code** | "协议原生，简单直接"——base64 直发 + 依靠 Anthropic API 的限制报错与 prompt caching | 已在 Anthropic 生态内，图量可控 |
+四套方案没有高下之分，只有约束不同。把每家的核心取舍摆在一起，能看到清晰的决策轴：
 
-有意思的观察：**dsh 和 Codex 各自做到了一半的"完备"**——dsh 强在存储层（内容寻址 + 双级缓存 + 跨会话复用），Codex 强在上下文层（resize 通知 + detail 分级 + 原子截断）。理论上二者结合才是终极形态；实际上 dsh 的 `read_image` 坐标比例尺已经在朝 Codex 的 ImageResizeNotice 方向走（都是"让模型知道自己看的是什么规格的图"）。
+**轴一：状态放哪里？**
+opencode 和 Claude Code 把状态交给外部（会话文件 / provider），客户端保持无状态——换来的是实现简单、无迁移负担。Codex 把状态放在进程内存（LRU），进程活着就加速。dsh 把状态放到磁盘（对象库 + 上传索引），换来跨会话复用与可审计重放，代价是要处理版本迁移、文件锁、配额回收这些存储问题。
+
+**轴二：信任谁做压缩？**
+Claude Code 完全信任调用方/API（不转换）。opencode 和 dsh 在客户端压缩，但压缩器的确定性要求不同——dsh 因为核心缓存键包含编码输出，必须锁定编码器行为到字节级；opencode 的输出直接消费，允许一定的漂移空间。Codex 用 Rust image crate 在性能与确定性间取中。
+
+**轴三：告诉模型多少？**
+大多数方案默认模型不需要知道图片的处理历史。Codex 是唯一显式反向通知的（ImageResizeNotice），这源于其场景：编码任务的截图坐标精度直接影响工具调用成败。dsh 的 read_image 坐标比例尺走了同一条思路——把"你看到的是什么规格"作为契约的一部分交还给模型。
+
+**轴四：引用还是内联？**
+这基本由 provider 决定。有 Files API（DeepSeek）就有机会做引用复用；没有（OpenAI Responses / Anthropic）就只能内联，于是治理重心自然滑向"如何让每次重发更便宜"——这正是 Codex strip_image_details 与 Claude Code prompt caching 各自的出发点。
+
+理解了这四条轴，再回头看任何一个新的智能体产品的图像方案，都可以快速定位它在每个轴上的站位，以及那个站位背后的协议与产品约束。
 
 ---
 
