@@ -3,194 +3,458 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dsh 图像管线详解 — 图片是如何进入大模型的</title>
+<title>dsh 图像管线深度解析 — 图片是如何进入大模型的</title>
 <style>
   :root {
-    --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3;
-    --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --orange: #f0883e;
-    --code-bg: #1c2129;
+    --bg: #ffffff; --card: #f6f8fa; --line: #d0d7de; --text: #1f2328;
+    --muted: #59636e; --accent: #0969da; --green: #1a7f37; --orange: #bc4c00;
+    --code-bg: #f6f8fa; --border-soft: #eaeef2;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.7 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
-  h1 { font-size: 28px; border-bottom: 2px solid var(--accent); padding-bottom: 12px; }
-  h2 { font-size: 21px; margin-top: 44px; color: var(--accent); }
-  h3 { font-size: 17px; margin-top: 30px; color: var(--green); }
+    font: 15px/1.75 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 44px 28px 90px; }
+  h1 { font-size: 27px; border-bottom: 3px solid var(--accent); padding-bottom: 12px; line-height:1.35; }
+  h2 { font-size: 21px; margin-top: 48px; color: var(--accent); border-bottom:1px solid var(--border-soft); padding-bottom:8px; }
+  h3 { font-size: 17px; margin-top: 32px; color: var(--green); }
+  h4 { font-size: 15px; color:#57606a; margin-top:22px; }
   code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
-    font-family: Consolas, monospace; font-size: 13px; color: #79c0ff; }
-  pre { background: var(--code-bg); padding: 16px; border-radius: 8px; overflow-x: auto;
-    border: 1px solid var(--line); }
-  pre code { background: none; padding: 0; color: var(--text); }
-  table { width: 100%; border-collapse: collapse; margin: 18px 0; }
-  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; font-size: 14px; }
-  th { background: var(--card); color: var(--accent); }
-  tr:nth-child(even) { background: rgba(255,255,255,.02); }
-  blockquote { border-left: 4px solid var(--accent); margin: 18px 0; padding: 10px 18px;
-    background: rgba(88,166,255,.06); color: var(--muted); border-radius: 0 8px 8px 0; }
-  .diagram { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-    padding: 20px; overflow-x: auto; margin: 20px 0; }
-  .diagram pre { background: none; border: none; color: var(--text); font-size: 12.5px; line-height: 1.5; }
-  .tag { display: inline-block; background: rgba(63,185,80,.15); color: var(--green);
-    padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-right: 6px; }
-  .warn { color: var(--orange); }
-  .footer { margin-top: 60px; color: var(--muted); font-size: 13px;
+    font-family: Consolas, "Courier New", monospace; font-size: 13px; color: #cf222e; }
+  pre { background: var(--code-bg); padding: 16px 18px; border-radius: 8px; overflow-x: auto;
+    border: 1px solid var(--line); line-height:1.55; }
+  pre code { background: none; padding: 0; color: var(--text); font-size:13px; }
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size:14px; }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; vertical-align:top; }
+  th { background: #eef1f4; color: var(--text); font-weight:600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  blockquote { border-left: 4px solid var(--accent); margin: 20px 0; padding: 12px 20px;
+    background: #ddf4ff; color: #24292f; border-radius: 0 8px 8px 0; }
+  blockquote p{margin:.3em 0}
+  .diagram { background: #fbfcfd; border: 1px solid var(--line); border-radius: 10px;
+    padding: 22px; overflow-x: auto; margin: 22px 0; }
+  .diagram pre { background: none; border: none; color: #24292f; font-size: 12px; line-height: 1.5; padding:0; }
+  .tag { display: inline-block; background: #dafbe1; color: var(--green);
+    padding: 3px 12px; border-radius: 12px; font-size: 12px; margin-right: 6px; font-weight:600; }
+  .tag.blue{background:#ddf4ff;color:var(--accent)}
+  .toc { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 26px; margin:24px 0; }
+  .toc ol{margin:.4em 0;padding-left:1.4em}
+  .toc li{margin:.25em 0}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  .callout{border-radius:8px;padding:14px 18px;margin:18px 0;border:1px solid}
+  .callout.info{background:#ddf4ff;border-color:#54aeff66}
+  .callout.warn{background:#fff8c5;border-color:#d4a72c66}
+  .footer { margin-top: 64px; color: var(--muted); font-size: 13px;
     border-top: 1px solid var(--line); padding-top: 16px; }
-  @media print { body { background:#fff; color:#111 } .wrap{max-width:none}
-    h2{color:#0366d6} h3{color:#22863a} code{background:#f0f0f0;color:#0366d6}
-    pre,th,tr:nth-child(even){background:#f6f8fa} .diagram{background:#fff} }
+  strong{font-weight:700}
+  @media print {
+    body { font-size: 12px; }
+    .wrap { max-width: none; padding: 10mm 12mm; }
+    h1 { font-size: 22pt; } h2 { page-break-after: avoid; } h3 { page-break-after: avoid; }
+    pre, table, .diagram, blockquote { page-break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>dsh 图像管线详解</h1>
-<p><span class="tag">面向 AI 应用开发者</span><span class="tag">deepseek-harness 0.1.1-rc.2</span><span class="tag">对比 opencode / cc-switch</span></p>
 
-<h2>一、为什么需要"图像管线"？</h2>
-<p>把图片发给大模型，最常见的是 <strong>base64 内联</strong>：</p>
-<pre><code>{
-  "role": "user",
-  "content": [
-    { "type": "text", "text": "这张图里有什么？" },
-    { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0KGgo..." } }
-  ]
-}</code></pre>
-<p>简单通用，但有四个致命问题：</p>
-<table>
-<tr><th>问题</th><th>具体表现</th></tr>
-<tr><td><strong>体积膨胀</strong></td><td>base64 膨胀 ~33%，5MB 截图变 ~6.7MB 文本；几十张图会话请求体轻松几十 MB</td></tr>
-<tr><td><strong>KV-cache 失效</strong></td><td>服务端缓存请求前缀加速；图片字节哪怕变 1 个，整段缓存作废重算，费用延迟翻倍</td></tr>
-<tr><td><strong>无法重放</strong></td><td>日志若存 base64 则巨大难管；重启后历史图片难以回看</td></tr>
-<tr><td><strong>无预算控制</strong></td><td>用户一次贴 50 张 8K 截图？没有闸门直接超限报错</td></tr>
-</table>
-<blockquote><strong>dsh 的答案一句话：图片存一次（内容寻址），发送时按需投影（带缓存），传输引用优先（file_id），全链路预算闸门。</strong></blockquote>
+<h1>dsh 图像管线深度解析<br><span style="font-size:16px;font-weight:normal;color:var(--muted)">图片是如何进入大模型的 —— 存储投影传输全链路</span></h1>
 
-<h2>二、全景架构图</h2>
-<div class="diagram"><pre>
-┌─────────────────────────────────────────────────────────────────────┐
-│ ① 规范化入库（提交时执行一次）                                         │
-│   贴图/产图 → EXIF矫正 → 去元数据 → sRGB → 长边2048px                 │
-│   → 按色彩复杂度选 PNG/WebP(85→80→75)/JPEG 逐档压缩 ≤4MiB             │
-│   → 存 objects/&lt;sha256&gt;（内容寻址）→ 日志只记 sha256 引用              │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ ② 请求投影（每次发模型时，带缓存）                                      │
-│   缓存键 = (attachmentId, 变换版本, 像素预算640k, 字节上限1MiB)         │
-│   命中 → 复用字节（KV-cache 前缀稳定 ✓）                               │
-│   未命中 → 按 provider 预算缩放编码 → 写入缓存                          │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ ③ 上传 wire（两种形态）                                                │
-│   路径A Files API优先：POST上传 → file_id（dsh-前缀）                   │
-│        上传索引持久化：同图跨会话零重复上传                              │
-│        wire = {type:'file', file_id}                                 │
-│   路径B base64回退：wire = {type:'image_url', data:...;base64,...}     │
-│        （Files 超时/失败自动回退）                                     │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│ ④ 确定性预算闸门（剔除非分批）                                          │
-│   Files引用累计≤128MiB / 内联≤20MiB / 单图≤1MiB / 单请求≤600张          │
-│   超限按 quantum 整张剔除 —— 同样输入永远剔同一批 → 重放一致             │
-└─────────────────────────────────────────────────────────────────────┘</pre></div>
-<blockquote>源码锚点：<code>attachment-local/src/index.ts</code>（规范化）、<code>request-images.ts</code>（投影缓存）、<code>llm-deepseek/src/file-store.ts + upload-index.ts</code>（Files 与持久化索引）、<code>serialize.ts</code>（wire 格式）。</blockquote>
+<p>
+<span class="tag">面向 AI 应用开发者</span>
+<span class="tag">deepseek-harness v0.1.1-rc.2</span>
+<span class="tag blue">四方对比：dsh · opencode · Codex · Claude Code</span>
+</p>
 
-<h2>三、逐层拆解</h2>
-
-<h3>3.1 规范化入库：一张图只处理一次</h3>
-<p>贴图并回车后，第一件事不是发模型，而是把图变成规范化"对象"：</p>
-<ul>
-<li><strong>矫正与清洗</strong>：EXIF 旋转实际应用；元数据与色彩配置全部剥除（对模型无意义只占体积）</li>
-<li><strong>像素标准化</strong>：统一 8-bit sRGB/sRGBA——视觉编码器最熟悉的格式，保证后续压缩确定</li>
-<li><strong>智能压缩</strong>：最近邻采样判断色彩复杂度后分支尝试：
-  <ul>
-  <li>低色彩无透明 → PNG（调色板仅无透明时用）</li>
-  <li>有透明通道 → WebP 质量 85→80→75</li>
-  <li>不透明照片 → JPEG 85→80→75</li>
-  <li>换档仍超 4MiB 才缩小长边重试</li></ul></li>
-<li><strong>内容寻址</strong>：最终字节算 SHA-256 存为对象 id。<strong>同样的图永远得到同一个 id</strong>——这是所有缓存的基石</li>
-</ul>
-<p>细节：干净的 8-bit sRGB PNG/JPEG/WebP 若已在限制内会<strong>逐字节原样通过</strong>（零损失零开销）；GIF 只取首帧（v1 契约排除动画）。</p>
-
-<h3>3.2 请求投影：保护你的 KV-cache</h3>
-<p>provider 对请求前缀做缓存，但传统做法每次重新压图，字节一变前缀就失效。dsh 把编码变成<strong>确定性纯函数</strong>：</p>
-<pre><code>缓存键 = (attachmentId, transformVersion, pixelBudget, byteCap, encoderSettings)</code></pre>
-<ul>
-<li>同图 + 同参数 = <strong>字节级相同输出</strong>，结果本地缓存直接复用</li>
-<li>并发读同图共享一次变换（FIFO 限流默认 2）</li>
-<li>多轮对话反复引用同图时，除第一轮外每轮字节完全一致 → provider 前缀缓存持续命中</li>
-</ul>
-
-<h3>3.3 Files API 与 file_id：请求体从 30MB 缩到几 KB</h3>
-<p>DeepSeek Files API 允许先上传拿 <code>file_id</code>，聊天请求只带短字符串。rc.2 把它做成首选：</p>
-<table>
-<tr><th>机制</th><th>实现</th></tr>
-<tr><td>上传复用索引</td><td><code>(attachmentId, variantId) → fileId, expiresAt</code> 磁盘持久化（原子写+文件锁）。第二次会话不再上传；过期前自动续传</td></tr>
-<tr><td>并发去重</td><td>多请求同时传同图共享一次上传操作，不打三份</td></tr>
-<tr><td>失败回退</td><td>Files 超时或配额错误自动降级 base64 内联——功能不中断只是变大</td></tr>
-<tr><td>配额回收</td><td>配额满批量清理过期上传</td></tr>
-</table>
-<blockquote><strong>注意：file_id 不是给模型"自己索引图片"用的。</strong>取图发生在 DeepSeek 服务端，价值纯粹在网络层——请求体从几十 MB 缩到几 KB。</blockquote>
-
-<h3>3.4 预算闸门：剔除而非分批</h3>
-<table>
-<tr><th>层</th><th>默认值</th><th>保护对象</th></tr>
-<tr><td>Files 引用累计</td><td>128 MiB</td><td>单请求文件引用总体积</td></tr>
-<tr><td>base64 回退累计</td><td>20 MiB</td><td>回退后的请求体</td></tr>
-<tr><td>单图编码</td><td>1 MiB</td><td>每张投影后的图</td></tr>
-<tr><td>单请求图数</td><td>600 张</td><td>极端防滥用</td></tr>
-</table>
-<p>超限按 quantum 步长<strong>整张剔除</strong>（非切片分批），算法确定性——今天被剔的图明天重放还是被剔，日志与实际请求永远一致。</p>
-
-<h3>3.5 read_image 坐标换算</h3>
-<p>rc.2 给 <code>read_image</code> 工具新增返回字段：<strong>缩放后尺寸</strong>和<strong>坐标比例尺</strong>。模型在缩略图上指认坐标时，工具链按比例换算回原图精确裁剪——GUI 自动化、视觉标注类插件（如 modlens）的基础设施级改进。</p>
-
-<h2>四、三方方案对比</h2>
-<p>对比本地主流智能体实现（opencode <code>src/image/image.ts</code>、cc-switch <code>src-tauri/src</code>）：</p>
-<table>
-<tr><th>维度</th><th>dsh (0.1.1-rc.2)</th><th>opencode</th><th>cc-switch</th></tr>
-<tr><td>定位</td><td>完整管线（存储+投影+上传）</td><td>发送前单次归一化</td><td>多客户端配置切换器，不管图像</td></tr>
-<tr><td>存储</td><td>✅ sha256 内容寻址持久库，可重放</td><td>❌ 无持久化，消息存 data URL</td><td>❌ 不经手</td></tr>
-<tr><td>压缩引擎</td><td>sharp/libvips，PNG/WebP/JPEG 分支</td><td>photon WASM，Lanczos3 + PNG/JPEG(80~40)</td><td>—</td></tr>
-<tr><td>尺寸策略</td><td>长边 2048px，超限逐档缩</td><td>2000×2000，超限 ×0.75 迭代 ≤32 次</td><td>—</td></tr>
-<tr><td>体积上限</td><td>归一化 4MiB + 投影 1MiB 两级</td><td>base64 后 5MiB 单级</td><td>—</td></tr>
-<tr><td>传输形态</td><td><strong>file_id 优先 + base64 回退</strong></td><td>仅 base64 内联</td><td>—</td></tr>
-<tr><td>缓存</td><td>✅ 投影缓存 + 远端上传索引，字节级确定</td><td>❌ 每次 normalize 重算</td><td>—</td></tr>
-<tr><td>预算</td><td>四层闸门，确定性剔除</td><td>单级 5MiB，超限报错或迭代缩</td><td>—</td></tr>
-<tr><td>KV-cache 影响</td><td>同图同参=字节相同，前缀稳定</td><td>重编码可能字节漂移，前缀易失效</td><td>—</td></tr>
-<tr><td>EXIF/色彩</td><td>矫正+剥离+sRGB 强制</td><td>未显式处理</td><td>—</td></tr>
-<tr><td>动图</td><td>明确排除（取首帧）</td><td>未显式排除</td><td>—</td></tr>
-</table>
-<blockquote><strong>总结</strong>：opencode 解决"这张图能不能塞进去"（单次归一化），dsh 解决"一万张图的会话如何长期经济地跑"（存储+投影+引用三级体系）。cc-switch 是 provider 切换器，不在本问题域。</blockquote>
-
-<h3>什么时候你不需要 dsh 这套？</h3>
-<ul>
-<li>单轮单图、用完即弃 → opencode 式单次归一化足够且更轻</li>
-<li>只用 OpenAI 兼容接口、从不关心历史重放 → base64 直塞最简单</li>
-<li>涉及<strong>多图长会话、成本敏感、审计追溯</strong> → dsh 三级体系是刚需</li>
-</ul>
-
-<h2>五、实践建议</h2>
+<div class="toc">
+<strong>目录</strong>
 <ol>
-<li><strong>插件开发者</strong>：不要自己压图。用 <code>ctx.attachments.saveImages()</code> 存图拿 <code>sha256:</code> 引用；视觉工具利用 <code>read_image</code> 的坐标比例尺做精确裁剪。</li>
-<li><strong>应用架构师</strong>："内容寻址 + 确定性投影 + 引用优先传输"三层模式可直接借鉴——目前开源智能体里最完整的实现。</li>
-<li><strong>成本敏感场景</strong>：确认 provider 支持 prefix caching，保持投影参数稳定——参数一变缓存键就变，前缀全部失效。</li>
+<li><a href="#s1">基础：模型到底怎么"看"图</a></li>
+<li><a href="#s2">为什么裸发 base64 会出事</a></li>
+<li><a href="#s3">dsh 全景架构</a></li>
+<li><a href="#s4">逐层拆解（规范化 / 投影缓存 / Files API / 预算闸门 / 坐标换算 / 历史治理）</a></li>
+<li><a href="#s5">四方方案对比：dsh vs opencode vs Codex vs Claude Code</a></li>
+<li><a href="#s6">实践建议</a></li>
+<li><a href="#s7">术语速查</a></li>
+</ol>
+</div>
+
+<h2 id="s1">一、基础：模型到底怎么"看"图</h2>
+
+<p>先建立最重要的认知：<strong>大模型本身不认识 PNG/JPEG 文件格式，它只认识数字矩阵。</strong></p>
+
+<p>当你说"把这张图发给 GPT"，实际发生的流程是：</p>
+
+<pre><code>你的 PNG 文件（二进制字节）
+    │ 解码
+    ▼
+像素矩阵 [R,G,B] [R,G,B] ... ──► 模型内部的视觉编码器（ViT 等）
+                                    │ 把像素块切成 patch、转成 token
+                                    ▼
+                            模型"看到"的是一串特殊的图像 token</code></pre>
+
+<p>而<strong>传输协议</strong>层面，主流只有三张"面孔"，本质都是同一张图的不同包装：</p>
+
+<table>
+<tr><th>形态</th><th>样子</th><th>用在哪家</th></tr>
+<tr><td><strong>base64 data URL</strong></td><td><code>data:image/png;base64,iVBORw0KGgo...</code></td><td>OpenAI Chat Completions、Claude Messages、DeepSeek、Gemini —— 几乎所有家</td></tr>
+<tr><td><strong>file_id 引用</strong></td><td><code>{ "type": "file", "file_id": "file-abc123" }</code></td><td>DeepSeek Files API、OpenAI Files</td></tr>
+<tr><td><strong>公网 URL</strong></td><td><code>{ "type":"image_url", "image_url":{"url":"https://..."} }</code></td><td>OpenAI（服务端代抓取）、Gemini、Claude（URL source）</td></tr>
+</table>
+
+<p>所以回答一个常见疑问：<strong>是的，模型侧最终收到的仍然是 base64 编码的像素</strong>（或等价的 file_id 由服务商自己解码）。所谓"图像管线"，全部工作都发生在<strong>你的客户端把文件字节变成请求体里那串字符之前</strong>——这一段做得好不好，直接决定了成本、速度和可靠性。</p>
+
+<h3>1.1 图片是怎么被模型"计费"的</h3>
+
+<p>以视觉 token 的通用计算方式为例：</p>
+
+<ul>
+<li><strong>OpenAI 系</strong>：图片按 patch 计费。<code>high</code> detail 下，一张图先缩放到长边 ≤2048px，再按 512px 正方形切 patch，每个 patch 约 170 token，外加 85 token 基础费；<code>low</code> detail 固定 85 token。</li>
+<li><strong>Anthropic 系</strong>：token ≈ <code>(宽 × 高) ÷ 750</code>。</li>
+<li><strong>DeepSeek 系</strong>：按归一化后的像素预算折算。</li>
+</ul>
+
+<div class="callout warn"><strong>关键结论：图片尺寸直接等于钱和延迟。</strong>一张 4K 截图不压缩就发，可能一次就是数千 token；而人眼识别内容往往只需要 1024px。这就是所有智能体都要做降采样的根本原因——<strong>不是怕请求太大，是怕 token 太贵</strong>。</div>
+
+<h2 id="s2">二、为什么裸发 base64 会出事</h2>
+
+<p>假设你写了个最朴素的循环对话脚本：每次都把历史消息里的所有图片原样重发。用不了多久你会撞上四堵墙：</p>
+
+<h3>墙 1：体积膨胀</h3>
+<p>base64 编码把 3 字节变 4 字符，净膨胀 33%。一张手机照片 4MB，编码后 5.3MB 文本；一次贴 10 张图，请求体 50MB+。很多网关/代理默认拒绝超过 1~10MB 的请求体。</p>
+
+<h3>墙 2：KV-cache 反复失效</h3>
+<p>这是最隐蔽也最贵的一堵墙。主流 provider 都做 <strong>prefix caching</strong>：如果本次请求的前 N 个 token 和上次完全一样，这部分不用重新计算，费用打一折、延迟大降。但"完全一样"是<strong>字节级</strong>判定。如果你每次对原图重新压缩编码，压缩器的输出哪怕差一个字节，从那张图开始往后的所有缓存全部作废。多轮对话里反复引用同一张截图时，朴素做法等于每轮都在全价重算。</p>
+
+<h3>墙 3：无法重放</h3>
+<p>会话日志如果把 base64 全存下来，一天的开发会话日志能到 GB 级。想回看"上周那张架构图"？翻不动。想在 fork 出的新分支里继续引用旧图？字节已经不在了。</p>
+
+<h3>墙 4：无预算控制</h3>
+<p>用户一次拖进来 30 张 8K 屏幕截图，或者某个工具每轮返回一张高清渲染图。没有闸门的话，要么请求被 provider 拒绝（Claude 对 &gt;20 张图的请求有更严格的单图尺寸限制），要么账单爆炸。</p>
+
+<div class="callout info"><strong>dsh 的图像管线就是为了系统性地拆掉这四堵墙。</strong>核心思路一句话：图片存一次（内容寻址），发送时按需投影（带缓存），传输走引用优先（file_id），全链路有预算闸门。</div>
+
+<h2 id="s3">三、dsh 全景架构</h2>
+
+<p>dsh 在 <code>0.1.1-rc.2</code> 中把图片处理重构为一条三级流水线。先看全景，再逐级拆解：</p>
+
+<div class="diagram"><pre>
+╔══════════════════════════════════════════════════════════════════╗
+║ 第一级：规范化入库（用户提交 prompt 时，一次性）                     ║
+║                                                                    ║
+║  贴图/工具产图                                                      ║
+│      │                                                            │
+│      ▼                                                            │
+│  ┌──────────────────────────────────────────────┐                │
+│  │ 准入检查：≤20张/消息；单源≤20MiB、6400万像素、   │                │
+│  │          ≤8192px/边                            │                │
+│  └──────────────────┬───────────────────────────┘                │
+│                     ▼                                            │
+│  EXIF 方向矫正 → 剥离元数据/ICC 色彩配置 → 转 8-bit sRGB            │
+│                     ▼                                            │
+│  长边等比缩至 2048px（normalizedImageMaxDimension，可配）           │
+│                     ▼                                            │
+│  ┌──────────────────────────────────────────────┐                │
+│  │ 色彩复杂度分类（最近邻有界采样，不做均值模糊）    │                │
+│  │   低色彩·无透明 → PNG（调色板）                 │                │
+│  │   低色彩·有透明 → PNG(真彩) → WebP 85→80→75    │                │
+│  │   其他有透明    → WebP 85→80→75                │                │
+│  │   其他不透明    → JPEG 85→80→75                │                │
+│  │   每档仍 >4MiB 才进一步缩小尺寸再试             │                │
+│  └──────────────────┬───────────────────────────┘                │
+│                     ▼                                            │
+│  SHA-256 内容寻址                                                  │
+│  → &lt;DSH_HOME&gt;/attachments/v1/objects/&lt;ab&gt;/&lt;abcdef…&gt;              │
+│  会话日志只写 "sha256:abcdef…" 引用+已校验元数据，永不写路径与大字节  │
+╚══════════════════════════════════╦═══════════════════════════════╝
+                                   │ 发送模型请求时
+                                   ▼
+╔══════════════════════════════════════════════════════════════════╗
+║ 第二级：请求投影（每次发模型时都可能执行，带两级缓存）                 ║
+║                                                                    ║
+║  缓存键 = (attachmentId, transformVersion, pixelBudget, byteCap,  ║
+║            encoderSettings)                                       ║
+║  ├─ 命中 → 直接复用上次编码字节                                     ║
+║  │         → 同图同参=字节级相同 → provider prefix-cache 稳定命中 ✓  ║
+║  └─ 未命中 → 按 DeepSeek vision 投影预算缩放编码                    ║
+║             （总像素预算 640_000；low-detail 512×512；上限 1MiB）    ║
+║             并发同键共享一次变换；FIFO 限流默认 2                     ║
+╚══════════════════════════════════╦═══════════════════════════════╝
+                                   │
+              ┌────────────────────┴───────────────────┐
+              ▼ 路径 A：Files API（首选）                ▼ 路径 B：base64 内联（回退）
+╔═══════════════════════════════════╗ ╔═══════════════════════════════════╗
+║ POST 上传 → file_id（dsh- 前缀）     ║ ║ wire: data:&lt;mime&gt;;base64,&lt;bytes&gt;  ║
+║ 上传索引持久化到磁盘：               ║ ║ 内联累计预算 20MiB                 ║
+║   (attachmentId, variantId)        ║ ║ 超限按 quantum 整张移除后再试       ║
+║    → fileId, bytes, expiresAt      ║ ╚════════════════╦════════════════╝
+║ 同图跨会话复用，过期前自动续传        ║                   │                  ║
+║ 配额满时批量清理过期记录             ║                   │                  ║
+╚═════════════════╦═════════════════╝                   │                  ║
+                  │  Files 失败/超时 → 自动回退 B ────────┘                  ║
+                  ▼                                                         ▼
+╔══════════════════════════════════════════════════════════════════╗
+║ 第三级：wire 格式（DeepSeek 协议不变）+ 预算闸门                    ║
+║                                                                    ║
+║  { type:"file", file_id } 或                                       ║
+║  { type:"image_url", image_url:{ url:"data:...;base64,..." } }     ║
+║                                                                    ║
+║  闸门：Files 引用累计 ≤128MiB / 内联累计 ≤20MiB /                   ║
+║        单图编码 ≤1MiB / 单请求 ≤600 张                              ║
+║  超限按 quantum 步长整张剔除（确定性：同样输入永远剔同一批）           ║
+╚══════════════════════════════════════════════════════════════════╝</pre></div>
+
+<blockquote>源码锚点：第一级 <code>packages/attachment/attachment-local/src/index.ts</code>；第二级 <code>request-images.ts</code>；第三级 <code>llm-deepseek/src/{serialize,file-store,upload-index}.ts</code>。</blockquote>
+
+<h2 id="s4">四、逐层拆解</h2>
+
+<h3>4.1 规范化入库：一张图只认真处理一次</h3>
+
+<p>这一级的核心理念是<strong>内容寻址（Content-Addressed Storage）</strong>：数据的哈希值就是它的地址。改一个像素，哈希全变——天然去重、天然防篡改。</p>
+
+<h4>准入即拒绝</h4>
+<p>每条消息最多 20 张图、累计 200MiB 源字节；单张最大 20MiB、6400 万像素、单边 8192px。超限直接报错，不会默默吞掉。</p>
+
+<h4>清洗三连</h4>
+<ol>
+<li><strong>EXIF 方向矫正</strong>——手机拍照常带旋转标记，不矫正的话模型看到的是横躺的图；</li>
+<li><strong>剥除元数据与 ICC 色彩配置</strong>——GPS 坐标、拍摄参数对模型无用还占体积，且避免隐私泄露；</li>
+<li><strong>统一 8-bit sRGB/sRGBA</strong>——16-bit 深度、CMYK 等异构色彩空间强制转换，保证后续每一步的字节可重现。</li>
 </ol>
 
-<h2>附：术语速查</h2>
+<h4>色彩复杂度感知压缩</h4>
+<p>压缩前先用<strong>最近邻有界采样</strong>判断图片是"低色彩"（截图、图表、二维码）还是"高色彩"（照片）：</p>
+<ul>
+<li>低色彩图走 PNG 路线——终端截图常常能压到几十 KB；</li>
+<li>有透明通道必须保 alpha（WebP/PNG），绝不能走 JPEG（会变黑底）；</li>
+<li>照片走 JPEG 逐档降质（85→80→75）。</li>
+</ul>
+<p>每一档质量不行才降下一档，<strong>尺寸缩减只在所有质量档都失败后才进行</strong>——优先保清晰度，其次保体积。</p>
+
+<h4>直通优化（passthrough）</h4>
+<p>如果原图已经是干净的 8-bit sRGB PNG/JPEG/WebP 且在限制内，<strong>逐字节原样通过</strong>，完全不重编码——零损失零开销的快路径。GIF 动图只取首帧（v1 契约明确排除动画，诚实声明而非静默劣化）。</p>
+
+<h4>入库之后</h4>
+<p>最终字节算 SHA-256 存为对象。会话日志里这张图只剩一行引用 <code>sha256:e3b0c44298fc…</code> 加已验证元数据（宽高、媒体类型）。<strong>日志从此与图片体积解耦。</strong></p>
+
+<h3>4.2 请求投影：保护 KV-cache 的核心设计</h3>
+
+<p>这是整个管线最有价值的一级。</p>
+
+<p><strong>问题回顾</strong>：provider 的 prefix caching 要求请求前缀字节级相同才命中。传统做法每次对原图重新跑一遍压缩，压缩器版本升级、参数微调、甚至并发时序差异都会导致输出字节漂移——前缀从那张图开始全部作废，整段重算。</p>
+
+<p><strong>dsh 的解法：把"图片编码"改造成确定性纯函数，并给结果加缓存。</strong></p>
+
+<pre><code>缓存键 = (attachmentId, transformVersion, pixelBudget, byteCap, encoderSettings)</code></pre>
+
+<p>五个字段缺一不可：</p>
+<ul>
+<li><code>attachmentId</code>：哪张图（sha256）</li>
+<li><code>transformVersion</code>：变换算法版本——管线升级时递增，旧缓存自然淘汰而不是错误命中</li>
+<li><code>pixelBudget / byteCap</code>：本次请求的预算（DeepSeek vision 默认总像素 640_000，编码上限 1MiB）</li>
+<li><code>encoderSettings</code>：编码器固定参数</li>
+</ul>
+
+<p>同键必同字节，于是：</p>
+<ol>
+<li>多轮对话反复引用同一张截图 → 除首轮外，每轮该图的字节<strong>完全一致</strong></li>
+<li>provider 的 prefix cache 从头到尾稳定命中 → 长会话成本大幅下降</li>
+<li>缩放只在"不放大"前提下进行（小图保持原样），避免无意义放大浪费 token</li>
+</ol>
+
+<p><strong>工程细节</strong>：并发展开时多个协程同时要同一张图的投影，共享同一次变换（一个算，其他等）；全局 FIFO 限流器控制同时进行的压缩数量（<code>imageCompressionConcurrency</code>，1~8，默认 2）。取消其中一个等待者不会取消共享的工作本身。缓存的字节在复用前还会被完整解码校验一次（确保确实是合法 8-bit sRGB），防止缓存被污染。</p>
+
+<h3>4.3 Files API 与 file_id：请求体从 30MB 到几 KB</h3>
+
+<p>DeepSeek 提供文件上传服务：先把图 POST 到 Files 端点拿一个 <code>file_id</code>，之后聊天请求体里只放这个短字符串，服务端自己去关联存储取图。</p>
+
+<p>rc.2 把这条路径做成<strong>首选</strong>，并补齐了让它生产可用的全部配套：</p>
+
+<h4>① 持久化上传索引（upload-index.ts）</h4>
+<p>磁盘上的映射表（带 <code>formatVersion: 3</code>、原子写 + 文件锁防多进程竞争）：</p>
+
+<pre><code>interface DeepSeekUploadRecord {
+  scope: DeepSeekFileScope      // 按 apiKey 派生的非秘密命名空间（密钥本身不落盘）
+  attachmentId: AttachmentId    // 哪张规范化图
+  variantId: ImageVariantIdType // 哪种投影变体（含路由预算）
+  fileId: DeepSeekFileIdType    // 远端 file-xxx
+  bytes: number
+  createdAt / expiresAt         // 过期时间
+}</code></pre>
+
+<p>效果：<strong>同一张图跨会话、跨重启都不再重复上传</strong>。第二次用到时查索引直接复用还没过期的 <code>file_id</code>；临近过期则按 <code>refreshMarginSeconds</code> 自动重传续期。索引的命名空间从 apiKey 哈希派生——不同 key 的上传互不污染，且密钥本身永不落盘或进日志。</p>
+
+<h4>② 并发去重与取消传播</h4>
+<p>多个请求同时要传同一张图时，合并为一次上传操作（SharedUpload 模式），大家等同一个 Promise；若所有等待者都取消了且上传尚未完成，才真正 abort 底层请求——避免"取消了一个等待者就把共享上传搞挂"的误伤。</p>
+
+<h4>③ 失败回退</h4>
+<p>Files API 超时（<code>filesApiTimeoutMs</code>，rc.2 专门把它与聊天流式超时<strong>解耦</strong>）或配额错误时，自动降级为路径 B base64 内联。功能不断，只是那次请求变大。</p>
+
+<h4>④ 配额回收</h4>
+<p>上传空间有配额，满了按批次清理已过期的记录再试。</p>
+
+<div class="callout info"><strong>澄清常见误解：file_id 不是给模型"自己去索引图片"用的。</strong>模型看到的只是协议字段，取图发生在 DeepSeek 服务端。它的收益纯粹在网络与成本层——请求体从几十 MB 缩到几 KB，且上传一次到处引用。</div>
+
+<h3>4.4 预算闸门：确定性剔除，而非分批</h3>
+
 <table>
-<tr><th>术语</th><th>含义</th></tr>
-<tr><td>base64 内联</td><td>图片编码为文本嵌入 JSON body，通用但膨胀 33%</td></tr>
-<tr><td>file_id / Files API</td><td>先上传到服务商，请求携带短引用 ID</td></tr>
-<tr><td>KV-cache / prefix caching</td><td>服务端缓存请求前缀计算结果，前缀字节级相同才命中</td></tr>
-<tr><td>内容寻址（sha256）</td><td>内容哈希作存储地址，天然去重不可篡改</td></tr>
-<tr><td>确定性投影</td><td>同输入必同输出的编码过程，缓存正确性的前提</td></tr>
-<tr><td>quantum 剔除</td><td>超预算按固定步长整张移除（非切片），保证可重放</td></tr>
+<tr><th>层</th><th>默认值</th><th>保护对象</th></tr>
+<tr><td>Files 引用累计</td><td>128 MiB</td><td>单请求中所有 file_id 代表的原始字节</td></tr>
+<tr><td>base64 内联回退累计</td><td>20 MiB</td><td>回退后的请求体大小</td></tr>
+<tr><td>单图投影编码</td><td>1 MiB</td><td>每张投到请求里的图</td></tr>
+<tr><td>单请求图片数</td><td>600 张</td><td>极端防滥用</td></tr>
 </table>
 
-<div class="footer">本文基于 deepseek-harness v0.1.1-rc.2 (b150a55) 源码撰写 · 2026-08-24 · dsh-hub 项目 · 后续将逐步讲解 dsh 构建细节与大模型知识</div>
+<p>超限时按 <code>quantum</code> 步长<strong>整张移除图片</strong>——不是把图切片分批发，而是这张图这个请求不带（文本部分照发，图的位置留占位说明）。</p>
+
+<p><strong>为什么强调确定性</strong>：剔除逻辑必须满足"同样输入永远剔同样几张"。这样今天被剔的图明天重放会话时还是被剔，日志、实际请求、计费三者永远对得上。随机或依赖时序的剔除策略会让重放失真。</p>
+
+<p>另有一层<strong>上下文溢出联动</strong>：当 provider 返回"上下文窗口超限"错误时，管线绕过常规压力检查，先尝试剔除大图再重试——因为 provider 已经确认了"确实塞不下"，此时无需容量元数据即可行动。</p>
+
+<h3>4.5 read_image 坐标换算：视觉工具的地基</h3>
+
+<p>rc.2 给 <code>tool-fs read_image</code> 工具加了两个返回值：<strong>缩略图的实际尺寸</strong>和<strong>相对原图的坐标比例尺</strong>。</p>
+
+<p>原因：发给模型的永远是按预算缩过的缩略图（比如 640k 像素），但模型经常需要"点击原图某个位置"或"裁剪原图某块区域"。有了比例尺，模型在缩略图上说的"(120, 80)"就能精确换算回原图坐标。这让 GUI 自动化、UI 标注、区域截取类插件（比如 hub 里收录的 modlens）有了标准化地基，不必各自实现一套换算。</p>
+
+<p>配套地，attachment-local 实现了<strong>确定性规范编码</strong>：同一张图的规范化结果永远一致（版本化的转换算法 + 锁定的编码器行为）。这是一切缓存正确性的根基。</p>
+
+<h3>4.6 历史图片的上下文管理：老图怎么办</h3>
+
+<p>会话越滚越长，早期轮次里的图片占着大量 token。dsh 的做法：</p>
+<ul>
+<li>投影缓存让"重发同一张图"成本接近零（字节相同，prefix cache 命中）</li>
+<li>整体逼近上下文上限时，compaction 先于文本处理图片：可选的 <code>toolResultPruner</code> 先改写过大的工具结果，摘要再替换掉最老的历史区间</li>
+<li>单张不可分割的图如果比保留预算还大，明确拒绝压缩并如实上报，而非静默丢图</li>
+</ul>
+
+<h2 id="s5">五、四方方案对比：dsh vs opencode vs Codex vs Claude Code</h2>
+
+<p>我们逐一研读了四家的实现：dsh 本仓源码；opencode <code>packages/opencode/src/image/image.ts</code>（photon WASM 方案）；OpenAI Codex <code>codex-rs/core/src/image_preparation.rs</code> + <code>codex-rs/utils/image/src/lib.rs</code> + <code>compact_remote_v2_images.rs</code>（Rust 实现）；Claude Code 官方 Vision 文档与其 Read 工具行为。</p>
+
+<h3>5.1 先说清楚各家面对的协议约束</h3>
+
+<table>
+<tr><th></th><th>传输形态</th><th>服务端缓存</th></tr>
+<tr><td><strong>DeepSeek（dsh 主目标）</strong></td><td>base64 data URL 或 Files API <code>file_id</code></td><td>prefix caching（自动）</td></tr>
+<tr><td><strong>OpenAI（Codex 目标）</strong></td><td>Responses API：base64 data URL（<code>input_image</code>）；不支持远程 URL 直发</td><td>automatic prefix caching</td></tr>
+<tr><td><strong>Anthropic（Claude Code 目标）</strong></td><td>Messages API：base64 <code>source</code>（也支持 URL source）</td><td>prompt caching（需显式 <code>cache_control</code> 标记）</td></tr>
+</table>
+
+<p>三家都没有"客户端长期对象存储"的概念——图要么每次随请求重发，要么靠 provider 自己的历史管理。<strong>这就是各客户端图像管线的分水岭：你替 provider 管多少？</strong></p>
+
+<h3>5.2 尺寸与压缩策略对比</h3>
+
+<table>
+<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
+<tr><td>最大边</td><td>入库 2048px（可配）</td><td>2000×2000</td><td>high-detail 2048px；unified 模式 6000px</td><td>建议长边 ≤1568px；&gt;20 张/请求时限 2000px</td></tr>
+<tr><td>缩放算法</td><td>sharp/libvips（Lanczos 类）</td><td>photon WASM Lanczos3</td><td>Rust image crate Triangle 滤镜</td><td>客户端自理（官方给缩放公式）</td></tr>
+<tr><td>格式分支</td><td>按色彩复杂度选 PNG/WebP/JPEG 三分支</td><td>先 PNG 再 JPEG 质量 80/85/70/55/40</td><td>统一编码器</td><td>不做客户端转换（原样发）</td></tr>
+<tr><td>EXIF/色彩管理</td><td>✅ 矫正+剥离+sRGB 强制</td><td>❌ 未显式处理</td><td>✅ 处理</td><td>❌ 客户端自理</td></tr>
+<tr><td>动图</td><td>明确排除（取首帧）</td><td>未显式处理</td><td>未显式处理</td><td>支持有限动图</td></tr>
+</table>
+
+<h3>5.3 存储与重放对比</h3>
+
+<table>
+<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
+<tr><td>持久对象库</td><td>✅ sha256 内容寻址，<code>&lt;DSH_HOME&gt;/attachments/</code></td><td>❌ 无，data URL 存于消息</td><td>❌ 无独立库（rollout 文件记录原始项）</td><td>❌ 无（会话 jsonl 记 base64）</td></tr>
+<tr><td>重启/fork 后可用</td><td>✅ 从对象库重建</td><td>⚠️ 取决于会话文件留存</td><td>⚠️ rollout 含原始数据</td><td>⚠️ 同左</td></tr>
+<tr><td>日志体积</td><td>只存引用，与图片体积解耦</td><td>含完整 base64</td><td>含原始数据</td><td>含完整 base64</td></tr>
+</table>
+
+<h3>5.4 缓存体系对比</h3>
+
+<table>
+<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
+<tr><td>客户端编码缓存</td><td>✅ 两级：本地磁盘持久投影缓存 + 远端上传索引</td><td>❌ 每次 normalize 重算</td><td>✅ 进程内 LRU（32 条 / 64MiB，sha1 键）</td><td>❌ 无</td></tr>
+<tr><td>跨会话复用</td><td>✅ 上传索引持久化，同图跨会话零重传</td><td>❌</td><td>⚠️ 仅进程生命周期内</td><td>❌</td></tr>
+<tr><td>字节级确定性</td><td>✅ 设计目标（transformVersion 版本化）</td><td>❌ 输出可能漂移</td><td>✅ 同版本下确定</td><td>—（不转换）</td></tr>
+</table>
+
+<h3>5.5 历史上下文里的图片治理（差异最大的维度）</h3>
+
+<table>
+<tr><th>策略</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
+<tr><td>老图处理</td><td>compaction 时 pruner 改写大结果，摘要替换老区间；不可分割大图明确拒绝并上报</td><td>无专门机制（历史全量重发）</td><td><strong>strip_image_details</strong>：lite 模型路由时剥掉历史图的 detail 字段；<strong>token 预算截断</strong>：裁历史时保证"图+相邻标签"原子保留或整体丢弃</td><td>依赖开发者手动管理（官方建议自行删旧图块或用 prompt caching）</td></tr>
+<tr><td>超限行为</td><td>quantum 整张剔除（确定性）</td><td>迭代缩放 32 次后报错</td><td>占位符替换（"image content omitted because…"）</td><td>API 直接拒绝</td></tr>
+<tr><td>给模型的反馈</td><td>剔除可见于日志</td><td>报错终止</td><td><strong>ImageResizeNotice</strong>：以 <code>images.resize_notice</code> 片段告知模型"第 N/M 张已从 WxH 缩至 W'xH'"</td><td>无</td></tr>
+</table>
+
+<p>Codex 有几个值得单独点赞的设计：</p>
+<ul>
+<li><strong>ImageResizeNotice</strong>——缩图后显式告知模型"你的图被缩了，原始多大、现在多大"。模型因此知道自己在看缩略图，坐标判断更谨慎。</li>
+<li><strong>detail 分级</strong>——支持 high/low/auto/original 多档，lite 模型自动剥离历史图的 detail 以省 token。</li>
+<li><strong>patch 预算</strong>——不只限尺寸还限 patch 总数（high 2500 / unified 10000），直接对应 OpenAI 计费粒度。</li>
+</ul>
+
+<h3>5.6 传输路径对比</h3>
+
+<table>
+<tr><th>维度</th><th>dsh</th><th>opencode</th><th>Codex</th><th>Claude Code</th></tr>
+<tr><td>传输形态</td><td><strong>file_id 优先 + base64 回退</strong>双路径</td><td>仅 base64 内联</td><td>仅 base64 内联（Responses API）</td><td>base64 为主（亦支持 URL source）</td></tr>
+<tr><td>上传去重</td><td>✅ 持久索引，跨会话复用</td><td>—</td><td>—</td><td>—</td></tr>
+<tr><td>失败回退</td><td>✅ Files 失败自动降级内联</td><td>—</td><td>—</td><td>—</td></tr>
+</table>
+
+<h3>5.7 总结：四种哲学</h3>
+
+<table>
+<tr><th></th><th>一句话哲学</th><th>适用场景</th></tr>
+<tr><td><strong>dsh</strong></td><td>"图片是一等公民资产：存一次、投影缓存、引用传输、全程可审计"</td><td>生产级多模态长会话、成本敏感、需审计重放的团队部署</td></tr>
+<tr><td><strong>opencode</strong></td><td>"发送前把图弄到能塞为止"——轻量单点归一化</td><td>个人 CLI 使用、单轮单图、快速上手</td></tr>
+<tr><td><strong>Codex</strong></td><td>"管好模型眼前的上下文"——精细的 resize 通知、detail 分级、patch 预算、历史 token 化裁剪</td><td>专业编码场景，图片多为工具产出，重视模型对自身输入的元认知</td></tr>
+<tr><td><strong>Claude Code</strong></td><td>"协议原生，简单直接"——base64 直发 + 依靠 Anthropic API 的限制报错与 prompt caching</td><td>已在 Anthropic 生态内，图量可控</td></tr>
+</table>
+
+<blockquote><strong>有趣的观察</strong>：dsh 和 Codex 各自做到了一半的"完备"。dsh 强在存储层（内容寻址 + 双级缓存 + 跨会话复用），Codex 强在上下文层（resize 通知 + detail 分级 + 原子截断）。理论上二者结合才是终极形态；实际上 dsh 的 read_image 坐标比例尺已经在朝 Codex 的 ImageResizeNotice 方向演进——都是让模型知道自己看到的是什么规格的图。</blockquote>
+
+<h2 id="s6">六、实践建议</h2>
+
+<h3>给插件开发者</h3>
+<ol>
+<li>不要自己压图。用 <code>ctx.attachments.saveImages()</code> 入库拿 <code>sha256:</code> 引用，编码/缓存/预算全部由管线承担。</li>
+<li>做视觉工具时务必利用 <code>read_image</code> 返回的坐标比例尺做精确换算，不要假设模型看到的尺寸 = 原图尺寸。</li>
+<li>工具返回大图前先想想能不能先缩——虽然管线兜底，省下来的就是用户的钱。</li>
+</ol>
+
+<h3>给应用架构师</h3>
+<ol>
+<li>如果产品有多模态历史需求，dsh 的三层模式（内容寻址存储 → 确定性投影缓存 → 引用优先传输）值得整体借鉴，是目前开源智能体里最完整的实现。</li>
+<li>无论哪家 API，<strong>保持投影参数恒定</strong>是 prefix-cache 命中率的生命线——预算参数一旦变动，所有历史图片的缓存键全部变化，前缀全灭。</li>
+</ol>
+
+<h3>给成本敏感场景</h3>
+<ol>
+<li>确认 provider 开启了 prefix caching（DeepSeek/OpenAI 自动；Anthropic 需显式 <code>cache_control</code>）。</li>
+<li>控制单图信息密度：截图尽量裁掉无关边缘；低色彩图（代码截图、终端输出）天然适合 PNG 路线，体积常只有照片的十分之一。</li>
+<li>长会话定期主动 compaction，别等被动溢出——被动恢复的代价是整段重算。</li>
+</ol>
+
+<h2 id="s7">七、术语速查</h2>
+
+<table>
+<tr><th>术语</th><th>含义</th></tr>
+<tr><td>base64 内联</td><td>图片二进制经 base64 编码为文本嵌入 JSON body。通用但膨胀 33%</td></tr>
+<tr><td>file_id / Files API</td><td>图片先上传到服务商文件服务，请求携带短引用 ID，服务端自行取图</td></tr>
+<tr><td>KV-cache / prefix caching</td><td>服务端缓存请求前缀的计算结果；前缀<strong>字节级相同</strong>才命中，否则从头重算</td></tr>
+<tr><td>内容寻址存储</td><td>以数据内容的哈希值（SHA-256）作为存储地址，天然去重、写入不可变</td></tr>
+<tr><td>确定性投影</td><td>相同输入必产生相同输出的编码过程；缓存正确性与重放一致性的前提</td></tr>
+<tr><td>transformVersion</td><td>变换算法版本号；升级时递增使旧缓存自然淘汰而非错误命中</td></tr>
+<tr><td>quantum 剔除</td><td>超预算时按固定步长整张移除图片（非切片），保证重放一致性</td></tr>
+<tr><td>patch / 视觉 token</td><td>模型把图片切分成的小方块，每个 patch 折算固定数量的计费 token</td></tr>
+<tr><td>detail 分级</td><td>OpenAI 特有：high（高分辨率多 patch）/ low（固定 512×512 低耗）/ auto</td></tr>
+<tr><td>EXIF 方向</td><td>手机照片元数据里的旋转标记；不矫正会导致模型看到横躺的图</td></tr>
+<tr><td>passthrough</td><td>已符合规范的图逐字节原样通过，跳过重编码的快路径</td></tr>
+<tr><td>LruCache</td><td>最近最少使用缓存；Codex 用它做进程内图片编码缓存（32 条/64MiB）</td></tr>
+<tr><td>rollout 文件</td><td>Codex 的会话记录格式，包含原始消息项（含图片数据）</td></tr>
+</table>
+
+<div class="footer">
+基于 deepseek-harness v0.1.1-rc.2 (b150a55)、opencode（photon WASM 实现）、openai/codex（Rust core）、Anthropic Vision 官方文档源码/资料撰写 · 2026-08-24 · dsh-hub 项目<br>
+系列下一篇预告：《agent loop 的内部构造》
+</div>
+
 </div>
 </body>
 </html>
