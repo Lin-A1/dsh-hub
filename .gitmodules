@@ -1,4 +1,4 @@
-[submodule "deepseek-harness"]
+﻿[submodule "deepseek-harness"]
 	path = deepseek-harness
 	url = https://github.com/deepseek-ai/deepseek-harness.git
 	branch = master
@@ -13,9 +13,6 @@
 [submodule "plugins/vision/modlens"]
 	path = plugins/vision/modlens
 	url = https://github.com/liustack/modlens.git
-[submodule "plugins/docs/archify"]
-	path = plugins/docs/archify
-	url = https://github.com/tt-a1i/archify.git
 [submodule "plugins/sandbox/mirage"]
 	path = plugins/sandbox/mirage
 	url = https://github.com/strukto-ai/mirage.git

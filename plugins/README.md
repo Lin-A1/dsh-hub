@@ -1,9 +1,9 @@
-# plugins
+﻿# plugins
 
 Plugin collections grouped by capability family. Categories mirror the official
 deepseek-harness package groups ([packages/README.md](../../packages/README.md)).
 
-Each directory holds one git submodule per plugin — your own and third-party
+Each directory holds one git submodule per plugin 鈥?your own and third-party
 plugins sit side by side under the category their capability belongs to.
 
 | Category | What belongs here |
@@ -31,4 +31,3 @@ plugins sit side by side under the category their capability belongs to.
 | `credentials/` | Credential-reference providers |
 | `vision/` | Vision bridges for text-only models (OCR/layout) |
 | `memory/` | Long-term memory and context bundles |
-| `docs/` | Architecture/docs generation |
