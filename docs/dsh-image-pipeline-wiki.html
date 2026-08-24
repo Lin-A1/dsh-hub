@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh 图像管线详解 — 图片是如何进入大模型的</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --line: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --orange: #f0883e;
+    --code-bg: #1c2129;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.7 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 28px; border-bottom: 2px solid var(--accent); padding-bottom: 12px; }
+  h2 { font-size: 21px; margin-top: 44px; color: var(--accent); }
+  h3 { font-size: 17px; margin-top: 30px; color: var(--green); }
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+    font-family: Consolas, monospace; font-size: 13px; color: #79c0ff; }
+  pre { background: var(--code-bg); padding: 16px; border-radius: 8px; overflow-x: auto;
+    border: 1px solid var(--line); }
+  pre code { background: none; padding: 0; color: var(--text); }
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; font-size: 14px; }
+  th { background: var(--card); color: var(--accent); }
+  tr:nth-child(even) { background: rgba(255,255,255,.02); }
+  blockquote { border-left: 4px solid var(--accent); margin: 18px 0; padding: 10px 18px;
+    background: rgba(88,166,255,.06); color: var(--muted); border-radius: 0 8px 8px 0; }
+  .diagram { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; overflow-x: auto; margin: 20px 0; }
+  .diagram pre { background: none; border: none; color: var(--text); font-size: 12.5px; line-height: 1.5; }
+  .tag { display: inline-block; background: rgba(63,185,80,.15); color: var(--green);
+    padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-right: 6px; }
+  .warn { color: var(--orange); }
+  .footer { margin-top: 60px; color: var(--muted); font-size: 13px;
+    border-top: 1px solid var(--line); padding-top: 16px; }
+  @media print { body { background:#fff; color:#111 } .wrap{max-width:none}
+    h2{color:#0366d6} h3{color:#22863a} code{background:#f0f0f0;color:#0366d6}
+    pre,th,tr:nth-child(even){background:#f6f8fa} .diagram{background:#fff} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>dsh 图像管线详解</h1>
+<p><span class="tag">面向 AI 应用开发者</span><span class="tag">deepseek-harness 0.1.1-rc.2</span><span class="tag">对比 opencode / cc-switch</span></p>
+
+<h2>一、为什么需要"图像管线"？</h2>
+<p>把图片发给大模型，最常见的是 <strong>base64 内联</strong>：</p>
+<pre><code>{
+  "role": "user",
+  "content": [
+    { "type": "text", "text": "这张图里有什么？" },
+    { "type": "image_url", "image_url": { "url": "data:image/png;base64,iVBORw0KGgo..." } }
+  ]
+}</code></pre>
+<p>简单通用，但有四个致命问题：</p>
+<table>
+<tr><th>问题</th><th>具体表现</th></tr>
+<tr><td><strong>体积膨胀</strong></td><td>base64 膨胀 ~33%，5MB 截图变 ~6.7MB 文本；几十张图会话请求体轻松几十 MB</td></tr>
+<tr><td><strong>KV-cache 失效</strong></td><td>服务端缓存请求前缀加速；图片字节哪怕变 1 个，整段缓存作废重算，费用延迟翻倍</td></tr>
+<tr><td><strong>无法重放</strong></td><td>日志若存 base64 则巨大难管；重启后历史图片难以回看</td></tr>
+<tr><td><strong>无预算控制</strong></td><td>用户一次贴 50 张 8K 截图？没有闸门直接超限报错</td></tr>
+</table>
+<blockquote><strong>dsh 的答案一句话：图片存一次（内容寻址），发送时按需投影（带缓存），传输引用优先（file_id），全链路预算闸门。</strong></blockquote>
+
+<h2>二、全景架构图</h2>
+<div class="diagram"><pre>
+┌─────────────────────────────────────────────────────────────────────┐
+│ ① 规范化入库（提交时执行一次）                                         │
+│   贴图/产图 → EXIF矫正 → 去元数据 → sRGB → 长边2048px                 │
+│   → 按色彩复杂度选 PNG/WebP(85→80→75)/JPEG 逐档压缩 ≤4MiB             │
+│   → 存 objects/&lt;sha256&gt;（内容寻址）→ 日志只记 sha256 引用              │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ ② 请求投影（每次发模型时，带缓存）                                      │
+│   缓存键 = (attachmentId, 变换版本, 像素预算640k, 字节上限1MiB)         │
+│   命中 → 复用字节（KV-cache 前缀稳定 ✓）                               │
+│   未命中 → 按 provider 预算缩放编码 → 写入缓存                          │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ ③ 上传 wire（两种形态）                                                │
+│   路径A Files API优先：POST上传 → file_id（dsh-前缀）                   │
+│        上传索引持久化：同图跨会话零重复上传                              │
+│        wire = {type:'file', file_id}                                 │
+│   路径B base64回退：wire = {type:'image_url', data:...;base64,...}     │
+│        （Files 超时/失败自动回退）                                     │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ ④ 确定性预算闸门（剔除非分批）                                          │
+│   Files引用累计≤128MiB / 内联≤20MiB / 单图≤1MiB / 单请求≤600张          │
+│   超限按 quantum 整张剔除 —— 同样输入永远剔同一批 → 重放一致             │
+└─────────────────────────────────────────────────────────────────────┘</pre></div>
+<blockquote>源码锚点：<code>attachment-local/src/index.ts</code>（规范化）、<code>request-images.ts</code>（投影缓存）、<code>llm-deepseek/src/file-store.ts + upload-index.ts</code>（Files 与持久化索引）、<code>serialize.ts</code>（wire 格式）。</blockquote>
+
+<h2>三、逐层拆解</h2>
+
+<h3>3.1 规范化入库：一张图只处理一次</h3>
+<p>贴图并回车后，第一件事不是发模型，而是把图变成规范化"对象"：</p>
+<ul>
+<li><strong>矫正与清洗</strong>：EXIF 旋转实际应用；元数据与色彩配置全部剥除（对模型无意义只占体积）</li>
+<li><strong>像素标准化</strong>：统一 8-bit sRGB/sRGBA——视觉编码器最熟悉的格式，保证后续压缩确定</li>
+<li><strong>智能压缩</strong>：最近邻采样判断色彩复杂度后分支尝试：
+  <ul>
+  <li>低色彩无透明 → PNG（调色板仅无透明时用）</li>
+  <li>有透明通道 → WebP 质量 85→80→75</li>
+  <li>不透明照片 → JPEG 85→80→75</li>
+  <li>换档仍超 4MiB 才缩小长边重试</li></ul></li>
+<li><strong>内容寻址</strong>：最终字节算 SHA-256 存为对象 id。<strong>同样的图永远得到同一个 id</strong>——这是所有缓存的基石</li>
+</ul>
+<p>细节：干净的 8-bit sRGB PNG/JPEG/WebP 若已在限制内会<strong>逐字节原样通过</strong>（零损失零开销）；GIF 只取首帧（v1 契约排除动画）。</p>
+
+<h3>3.2 请求投影：保护你的 KV-cache</h3>
+<p>provider 对请求前缀做缓存，但传统做法每次重新压图，字节一变前缀就失效。dsh 把编码变成<strong>确定性纯函数</strong>：</p>
+<pre><code>缓存键 = (attachmentId, transformVersion, pixelBudget, byteCap, encoderSettings)</code></pre>
+<ul>
+<li>同图 + 同参数 = <strong>字节级相同输出</strong>，结果本地缓存直接复用</li>
+<li>并发读同图共享一次变换（FIFO 限流默认 2）</li>
+<li>多轮对话反复引用同图时，除第一轮外每轮字节完全一致 → provider 前缀缓存持续命中</li>
+</ul>
+
+<h3>3.3 Files API 与 file_id：请求体从 30MB 缩到几 KB</h3>
+<p>DeepSeek Files API 允许先上传拿 <code>file_id</code>，聊天请求只带短字符串。rc.2 把它做成首选：</p>
+<table>
+<tr><th>机制</th><th>实现</th></tr>
+<tr><td>上传复用索引</td><td><code>(attachmentId, variantId) → fileId, expiresAt</code> 磁盘持久化（原子写+文件锁）。第二次会话不再上传；过期前自动续传</td></tr>
+<tr><td>并发去重</td><td>多请求同时传同图共享一次上传操作，不打三份</td></tr>
+<tr><td>失败回退</td><td>Files 超时或配额错误自动降级 base64 内联——功能不中断只是变大</td></tr>
+<tr><td>配额回收</td><td>配额满批量清理过期上传</td></tr>
+</table>
+<blockquote><strong>注意：file_id 不是给模型"自己索引图片"用的。</strong>取图发生在 DeepSeek 服务端，价值纯粹在网络层——请求体从几十 MB 缩到几 KB。</blockquote>
+
+<h3>3.4 预算闸门：剔除而非分批</h3>
+<table>
+<tr><th>层</th><th>默认值</th><th>保护对象</th></tr>
+<tr><td>Files 引用累计</td><td>128 MiB</td><td>单请求文件引用总体积</td></tr>
+<tr><td>base64 回退累计</td><td>20 MiB</td><td>回退后的请求体</td></tr>
+<tr><td>单图编码</td><td>1 MiB</td><td>每张投影后的图</td></tr>
+<tr><td>单请求图数</td><td>600 张</td><td>极端防滥用</td></tr>
+</table>
+<p>超限按 quantum 步长<strong>整张剔除</strong>（非切片分批），算法确定性——今天被剔的图明天重放还是被剔，日志与实际请求永远一致。</p>
+
+<h3>3.5 read_image 坐标换算</h3>
+<p>rc.2 给 <code>read_image</code> 工具新增返回字段：<strong>缩放后尺寸</strong>和<strong>坐标比例尺</strong>。模型在缩略图上指认坐标时，工具链按比例换算回原图精确裁剪——GUI 自动化、视觉标注类插件（如 modlens）的基础设施级改进。</p>
+
+<h2>四、三方方案对比</h2>
+<p>对比本地主流智能体实现（opencode <code>src/image/image.ts</code>、cc-switch <code>src-tauri/src</code>）：</p>
+<table>
+<tr><th>维度</th><th>dsh (0.1.1-rc.2)</th><th>opencode</th><th>cc-switch</th></tr>
+<tr><td>定位</td><td>完整管线（存储+投影+上传）</td><td>发送前单次归一化</td><td>多客户端配置切换器，不管图像</td></tr>
+<tr><td>存储</td><td>✅ sha256 内容寻址持久库，可重放</td><td>❌ 无持久化，消息存 data URL</td><td>❌ 不经手</td></tr>
+<tr><td>压缩引擎</td><td>sharp/libvips，PNG/WebP/JPEG 分支</td><td>photon WASM，Lanczos3 + PNG/JPEG(80~40)</td><td>—</td></tr>
+<tr><td>尺寸策略</td><td>长边 2048px，超限逐档缩</td><td>2000×2000，超限 ×0.75 迭代 ≤32 次</td><td>—</td></tr>
+<tr><td>体积上限</td><td>归一化 4MiB + 投影 1MiB 两级</td><td>base64 后 5MiB 单级</td><td>—</td></tr>
+<tr><td>传输形态</td><td><strong>file_id 优先 + base64 回退</strong></td><td>仅 base64 内联</td><td>—</td></tr>
+<tr><td>缓存</td><td>✅ 投影缓存 + 远端上传索引，字节级确定</td><td>❌ 每次 normalize 重算</td><td>—</td></tr>
+<tr><td>预算</td><td>四层闸门，确定性剔除</td><td>单级 5MiB，超限报错或迭代缩</td><td>—</td></tr>
+<tr><td>KV-cache 影响</td><td>同图同参=字节相同，前缀稳定</td><td>重编码可能字节漂移，前缀易失效</td><td>—</td></tr>
+<tr><td>EXIF/色彩</td><td>矫正+剥离+sRGB 强制</td><td>未显式处理</td><td>—</td></tr>
+<tr><td>动图</td><td>明确排除（取首帧）</td><td>未显式排除</td><td>—</td></tr>
+</table>
+<blockquote><strong>总结</strong>：opencode 解决"这张图能不能塞进去"（单次归一化），dsh 解决"一万张图的会话如何长期经济地跑"（存储+投影+引用三级体系）。cc-switch 是 provider 切换器，不在本问题域。</blockquote>
+
+<h3>什么时候你不需要 dsh 这套？</h3>
+<ul>
+<li>单轮单图、用完即弃 → opencode 式单次归一化足够且更轻</li>
+<li>只用 OpenAI 兼容接口、从不关心历史重放 → base64 直塞最简单</li>
+<li>涉及<strong>多图长会话、成本敏感、审计追溯</strong> → dsh 三级体系是刚需</li>
+</ul>
+
+<h2>五、实践建议</h2>
+<ol>
+<li><strong>插件开发者</strong>：不要自己压图。用 <code>ctx.attachments.saveImages()</code> 存图拿 <code>sha256:</code> 引用；视觉工具利用 <code>read_image</code> 的坐标比例尺做精确裁剪。</li>
+<li><strong>应用架构师</strong>："内容寻址 + 确定性投影 + 引用优先传输"三层模式可直接借鉴——目前开源智能体里最完整的实现。</li>
+<li><strong>成本敏感场景</strong>：确认 provider 支持 prefix caching，保持投影参数稳定——参数一变缓存键就变，前缀全部失效。</li>
+</ol>
+
+<h2>附：术语速查</h2>
+<table>
+<tr><th>术语</th><th>含义</th></tr>
+<tr><td>base64 内联</td><td>图片编码为文本嵌入 JSON body，通用但膨胀 33%</td></tr>
+<tr><td>file_id / Files API</td><td>先上传到服务商，请求携带短引用 ID</td></tr>
+<tr><td>KV-cache / prefix caching</td><td>服务端缓存请求前缀计算结果，前缀字节级相同才命中</td></tr>
+<tr><td>内容寻址（sha256）</td><td>内容哈希作存储地址，天然去重不可篡改</td></tr>
+<tr><td>确定性投影</td><td>同输入必同输出的编码过程，缓存正确性的前提</td></tr>
+<tr><td>quantum 剔除</td><td>超预算按固定步长整张移除（非切片），保证可重放</td></tr>
+</table>
+
+<div class="footer">本文基于 deepseek-harness v0.1.1-rc.2 (b150a55) 源码撰写 · 2026-08-24 · dsh-hub 项目 · 后续将逐步讲解 dsh 构建细节与大模型知识</div>
+</div>
+</body>
+</html>

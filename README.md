@@ -46,17 +46,6 @@ maintains it. Categories mirror the official
 [packages/README.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/README.md)
 group list.
 
-## Docs: dsh internals & LLM knowledge (series)
-
-A bilingual-friendly series in [`docs/`](docs/) explaining how dsh is built and
-the LLM mechanics behind it, aimed at developers who use model APIs but want the
-layer below. Each article ships as Markdown (Mermaid diagrams) plus a rendered
-HTML/PDF.
-
-| # | Article | Formats |
-|---|---|---|
-| 01 | [你的图片是怎么"喂"给大模型的？—— 图像管线详解](docs/01-llm-image-pipeline.md)（normalization → cached projection → Files upload reuse, with flowcharts） | [HTML](docs/01-llm-image-pipeline.html) · [PDF](docs/01-llm-image-pipeline.pdf) |
-
 ## Submodules
 
 `deepseek-harness` tracks the upstream `master` branch. The current pointer is
@@ -145,6 +134,18 @@ Then commit any pointer bumps.
 - Plugin READMEs declare their capability, config schema, and the events they
   emit or listen to.
 - This repository itself ships no code — it is a pointer index.
+
+## Learning wiki (dsh internals & LLM knowledge)
+
+A step-by-step technical wiki explaining how dsh is built and the LLM
+knowledge behind it, aimed at AI application developers. First installment —
+**how images reach the model** (normalization, projection cache, Files API vs
+base64, budget gates), with a three-way comparison against opencode and
+cc-switch:
+
+- [docs/dsh-image-pipeline-wiki.md](docs/dsh-image-pipeline-wiki.md) (Markdown)
+- [docs/dsh-image-pipeline-wiki.html](docs/dsh-image-pipeline-wiki.html) (HTML)
+- [docs/dsh-image-pipeline-wiki.pdf](docs/dsh-image-pipeline-wiki.pdf) (PDF)
 
 ## License
 
