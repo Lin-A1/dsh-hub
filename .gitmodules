@@ -49,9 +49,6 @@
 [submodule "plugins/skill/dsh-anchored-standard"]
 	path = plugins/skill/dsh-anchored-standard
 	url = https://github.com/xiaobright/dsh-anchored-standard.git
-[submodule "plugins/llm/dsh-llm-openroute"]
-	path = plugins/llm/dsh-llm-openroute
-	url = https://github.com/Lin-A1/dsh-llm-openroute.git
 [submodule "plugins/hooks/dsh-hooks-github"]
 	path = plugins/hooks/dsh-hooks-github
 	url = https://github.com/Lin-A1/dsh-hooks-github.git
