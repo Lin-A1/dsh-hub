@@ -58,6 +58,3 @@
 [submodule "plugins/lsp/dsh-lsp-pyright"]
 	path = plugins/lsp/dsh-lsp-pyright
 	url = https://github.com/Lin-A1/dsh-lsp-pyright.git
-[submodule "plugins/runtime/dsh-runtime-claude"]
-	path = plugins/runtime/dsh-runtime-claude
-	url = https://github.com/Lin-A1/dsh-runtime-claude.git
