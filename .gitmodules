@@ -61,6 +61,3 @@
 [submodule "plugins/runtime/dsh-runtime-claude"]
 	path = plugins/runtime/dsh-runtime-claude
 	url = https://github.com/Lin-A1/dsh-runtime-claude.git
-[submodule "plugins/workflow/dsh-workflow-dag"]
-	path = plugins/workflow/dsh-workflow-dag
-	url = https://github.com/Lin-A1/dsh-workflow-dag.git
