@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh 插件化深度解析 —— 一切皆插件是如何运转的</title>
+<style>
+  :root {
+    --bg: #ffffff; --card: #f6f8fa; --line: #d0d7de; --text: #1f2328;
+    --muted: #59636e; --accent: #0969da; --green: #1a7f37; --orange: #bc4c00;
+    --code-bg: #f6f8fa; --border-soft: #eaeef2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.75 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 44px 28px 90px; }
+  h1 { font-size: 27px; border-bottom: 3px solid var(--accent); padding-bottom: 12px; line-height:1.35; }
+  h2 { font-size: 21px; margin-top: 48px; color: var(--accent); border-bottom:1px solid var(--border-soft); padding-bottom:8px; }
+  h3 { font-size: 17px; margin-top: 32px; color: var(--green); }
+  h4 { font-size: 15px; color:#57606a; margin-top:22px; }
+  code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px;
+    font-family: Consolas, "Courier New", monospace; font-size: 13px; color: #cf222e; }
+  pre { background: var(--code-bg); padding: 16px 18px; border-radius: 8px; overflow-x: auto;
+    border: 1px solid var(--line); line-height:1.55; }
+  pre code { background: none; padding: 0; color: var(--text); font-size:13px; }
+  table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size:14px; }
+  th, td { border: 1px solid var(--line); padding: 9px 12px; text-align: left; vertical-align:top; }
+  th { background: #eef1f4; color: var(--text); font-weight:600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  blockquote { border-left: 4px solid var(--accent); margin: 20px 0; padding: 12px 20px;
+    background: #ddf4ff; color: #24292f; border-radius: 0 8px 8px 0; }
+  blockquote p{margin:.3em 0}
+  .diagram { background: #fbfcfd; border: 1px solid var(--line); border-radius: 10px;
+    padding: 22px; overflow-x: auto; margin: 22px 0; }
+  .diagram pre { background: none; border: none; color: #24292f; font-size: 12px; line-height: 1.5; padding:0; }
+  .tag { display: inline-block; background: #dafbe1; color: var(--green);
+    padding: 3px 12px; border-radius: 12px; font-size: 12px; margin-right: 6px; font-weight:600; }
+  .tag.blue{background:#ddf4ff;color:var(--accent)}
+  .toc { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 26px; margin:24px 0; }
+  .toc ol{margin:.4em 0;padding-left:1.4em}
+  .toc li{margin:.25em 0}
+  .toc a{color:var(--accent);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  .callout{border-radius:8px;padding:14px 18px;margin:18px 0;border:1px solid}
+  .callout.info{background:#ddf4ff;border-color:#54aeff66}
+  .callout.warn{background:#fff8c5;border-color:#d4a72c66}
+  .footer { margin-top: 64px; color: var(--muted); font-size: 13px;
+    border-top: 1px solid var(--line); padding-top: 16px; }
+  strong{font-weight:700}
+  @media print {
+    body { font-size: 12px; }
+    .wrap { max-width: none; padding: 10mm 12mm; }
+    h1 { font-size: 22pt; } h2 { page-break-after: avoid; } h3 { page-break-after: avoid; }
+    pre, table, .diagram, blockquote { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>dsh 插件化深度解析 —— 一切皆插件是如何运转的</h1>
+<blockquote>
+<p>面向 AI 应用开发者的底层原理讲解 · 基于 deepseek-harness v0.1.1-rc.2 (b150a55) 源码 · 系列第二篇</p>
+<p>本文是「dsh 构建细节与大模型知识」系列第二篇。第一篇见 <a href="dsh-image-pipeline-wiki.md">dsh 图像管线深度解析</a>。</p>
+</blockquote>
+
+<div class="toc">
+<ol>
+  <li><a href="#c1">为什么 dsh 选择「一切皆插件」</a></li>
+  <li><a href="#c2">Cordis 五件事：插件框架的内核</a></li>
+  <li><a href="#c3">一个插件的真实形态</a></li>
+  <li><a href="#c4">Loader 与 cordis.yml：应用如何被组合</a></li>
+  <li><a href="#c5">运行时的形状：从单个插件到插件树</a></li>
+  <li><a href="#c6">Profiles / Bundles / Layers：可分发、可叠加的插件化</a></li>
+  <li><a href="#c7">能力缝（capability seam）：一次替换改变整个产品</a></li>
+  <li><a href="#c8">热重载（HMR）：改代码不重启</a></li>
+  <li><a href="#c9">与其它插件模型的差异（概念对照）</a></li>
+  <li><a href="#c10">实践建议</a></li>
+  <li><a href="#c11">术语速查</a></li>
+</ol>
+</div>
+
+<h2 id="c1">一、为什么 dsh 选择「一切皆插件」</h2>
+<p>先建立一个最重要的认知：<strong>dsh 没有需要打补丁的「特权核心」。模型适配器、工具注册表、会话日志、甚至 agent loop 本身，全部都是插件。</strong></p>
+<div class="diagram"><pre>传统单体应用                         dsh
+─────────────────────────          ─────────────────────────
+app.boot() {                        root Context
+  initConfig()                         │
+  initDB()                             ▼
+  initTools()          ──对比──▶       Loader 读取 cordis.yml
+  initModelAdapter()                     │ 挂载每一个插件行
+  initAgentLoop()                        ▼
+  ...永远要改这里才能加功能          每一个贡献都作为「插件」挂在 ctx 上
+}                                    想加能力 = 在旁边再挂一个插件
+                                      卸载它 = 它的所有贡献自动回卷</pre></div>
+<p><code>architecture.md</code> 里把这句话说得很直白：</p>
+<blockquote><p>没有需要打补丁的特权核心：你通过在其它插件旁边挂一个插件来扩展 dsh，而注册都是 effect，会在所属插件卸载时回卷。</p></blockquote>
+<p>这意味着三件事：</p>
+<ul>
+  <li><strong>可替换性来自配置，而非分叉</strong>——换一个 LLM 适配器、换一个 shell 执行世界、换一个 subagent 实现，都只是换一棵插件树里的几行，不需要 fork 源码。</li>
+  <li><strong>能力有统一生命周期</strong>——任何贡献（工具、事件监听、服务、适配器）都走同一条「加载即注册、卸载即撤销」的路径。</li>
+  <li><strong>组合是可声明的</strong>——应用长什么样，由一份分层叠加的配置决定，而不是由 <code>boot()</code> 里的调用顺序决定。</li>
+</ul>
+<p>理解后面所有内容，只要抓住一句话：<strong>运行中的 dsh 是一棵在 boot 时由有序层组合出来的插件树。</strong></p>
+
+<h2 id="c2">二、Cordis 五件事：插件框架的内核</h2>
+<p><code>docs/cordis-primer.md</code> 把 Cordis（dsh 底层那套被 vendored 的插件框架）归纳成五件事。这是全文的基石。</p>
+
+<h3>2.1 一个插件是「实现了 Service 的对象」</h3>
+<p>它可以是三种形态之一：</p>
+<pre><code>import { Service, type Context } from '@deepseek-ai/cordis'
+
+// 1. 函数插件（最常见）：可选 name / inject，必须有 apply(ctx)
+export const name = 'hello'
+export function apply(ctx: Context) {
+  console.log('hello from my first plugin')
+}
+
+// 2. 对象插件：带 apply 方法的对象
+export const objectPlugin = { name: 'object-plugin', apply(ctx: Context) {} }
+
+// 3. 类插件：Service 的子类（需要公开服务时用，见第三章）
+export class MyService extends Service {
+  constructor(ctx: Context) { super(ctx, 'myTutorialService') }
+}</code></pre>
+<p>在你需要公开服务之前，请一直用函数形态。来源：<code>docs/cordis-tutorial/01-first-plugin.zh.md</code>。</p>
+
+<h3>2.2 上下文是「服务的仓库」</h3>
+<p>一个服务从上下文里认领一个稳定的 <code>ctx.&lt;key&gt;</code>，比如 <code>ctx.tools</code>、<code>ctx.llm</code>、<code>ctx.sessions</code>；其它插件通过 <strong>key</strong> 而不是 import 某个具体实现来找到它。</p>
+<div class="diagram"><pre>插件 A 认领 ctx.tools  ─┐
+                        ├─▶ 共享的 Context 仓库
+插件 B 认领 ctx.llm   ─┘        ↑
+                                  │ 通过 key 取用，不 import 实现
+                          插件 C 调用 ctx.tools / ctx.llm</pre></div>
+
+<h3>2.3 用 <code>inject</code> 声明依赖</h3>
+<p>一个插件若 <code>inject: ['timer']</code>，它会一直等到 <code>timer</code> 服务出现才加载。于是<strong>加载顺序由服务依赖表达，而不是手写 boot 时序</strong>。这正是 2.2 那句「通过 key 找服务」的另一面：找不到就等，不报错、不崩溃。</p>
+
+<h3>2.4 类型化事件做通信</h3>
+<p>服务通过 TypeScript 声明合并（declaration merging）声明事件名，再以四种模式分发：</p>
+<table>
+  <tr><th>模式</th><th>等待？</th><th>触发顺序</th><th>有返回值？</th><th>典型用途</th></tr>
+  <tr><td><code>emit</code></td><td>否</td><td>按注册顺序观察</td><td>否</td><td>广播事实</td></tr>
+  <tr><td><code>waterfall</code></td><td>否</td><td>按注册顺序观察</td><td>是</td><td>中间件式改写/拦截</td></tr>
+  <tr><td><code>parallel</code></td><td>是</td><td>全部并发观察</td><td>否</td><td>并发副作用</td></tr>
+  <tr><td><code>serial</code></td><td>是</td><td>按注册顺序</td><td>是</td><td>有序决策</td></tr>
+</table>
+<p><code>ctx.waterfall</code> 是 around 中间件：监听器拿到 <code>(...args, next)</code>，调用 <code>next()</code> 把（可能被包装过的）结果往下传；<strong>不调用 <code>next()</code> 就是短路</strong>。单决策事件里短路是设计本身（策略监听器直接 own 决策）；只做标注的监听器必须 <code>next()</code>。<code>architecture.md</code> 与 <code>packages/AGENTS.md</code> 都强调：<strong>waterfall 监听器必须调用 <code>next()</code>，否则会截断整条链。</strong></p>
+
+<h3>2.5 注册是可逆的 effect</h3>
+<p>工具 schema、prompt 段落、适配器、provider、事件监听，全部通过 <code>ctx.effect()</code> 或 <code>ctx.on()</code> 安装，于是<strong>热重载和拆除都能可预测地回卷</strong>。你很少需要亲手写 <code>ctx.effect()</code>，因为内置注册 API 本身已经是 effect：<code>ctx.on(event, listener)</code> 卸载时移除；<code>ctx.plugin(child)</code> 随父插件一起 dispose；<code>ctx.tools.register(...)</code> 这类 harness 注册表也会把返回的 disposer 挂在调用插件上自动撤销。</p>
+
+<h2 id="c3">三、一个插件的真实形态</h2>
+<h3>3.1 函数插件（贡献行为，不公开服务）</h3>
+<pre><code>import type { Context } from '@deepseek-ai/cordis'
+
+export const name = 'lifecycle-demo'
+
+export function apply(ctx: Context) {
+  // 任何 Cordis 没管的资源（定时器/连接/watcher）都包进 effect，并返回释放函数
+  ctx.effect(() => {
+    const timer = setInterval(() => console.log('tick'), 200)
+    return () => {            // 卸载时运行
+      clearInterval(timer)
+      console.log('cleaned up')
+    }
+  })
+}</code></pre>
+<p>要点（<code>docs/cordis-tutorial/02-lifecycle-and-effects.zh.md</code>）：</p>
+<ul>
+  <li>effect 主体在加载期运行，返回的 disposer 在卸载期运行；</li>
+  <li>对于生命周期与插件一致的资源，你绝不需要自己调 disposer；</li>
+  <li><code>ctx.plugin(child)</code> 会返回一个 <strong>fiber</strong>（已加载插件实例的运行时句柄），<code>fiber.dispose()</code> 会等它的全部清理（含异步）完成后，再递归卸载它挂的所有子插件。</li>
+</ul>
+
+<h3>3.2 服务插件（公开一个 <code>ctx.&lt;key&gt;</code>）</h3>
+<pre><code>import { Service, type Context } from '@deepseek-ai/cordis'
+
+export class MyService extends Service {
+  constructor(ctx: Context) { super(ctx, 'myService') }
+  doWork() { /* ... */ }
+}
+// 其它插件写 inject: ['myService']，然后通过 ctx.myService.doWork() 调用</code></pre>
+<p>类插件把能力挂上 <code>ctx</code> 的某个 key，让别的插件按 key 依赖它——这就是 2.2/2.3 的组合闭环。</p>
+
+<h3>3.3 双形态陷阱（来自 dsh-hub 的踩坑记录）</h3>
+<p><code>dsh-hub/AGENTS.md</code> 特别点出：<strong>服务包默认导出它的类；函数插件用命名导出 <code>name</code> / <code>inject</code> / <code>Config</code> / <code>apply</code>，且不要有默认导出。</strong> 把两者混用，Loader 会丢掉函数插件的命名空间。注册都是 effect：<code>ctx.effect()</code>、<code>ctx.on()</code>（含 waterfall 监听）——卸载插件 fiber 会把它们全部反注册。</p>
+
+<h2 id="c4">四、Loader 与 cordis.yml：应用如何被组合</h2>
+<p>Cordis 不是让你在代码里 <code>import</code> 插件并调用，而是让你<strong>描述</strong>一份插件清单，由 Loader 去挂载。</p>
+<pre><code># cordis.yml —— 一组 Cordis 配置项的列表
+- id: logger
+  name: '@deepseek-ai/cordis-plugin-logger-console'
+- id: hello
+  name: './hello.ts'        # 相对路径或 npm 包名都行
+- id: heavy
+  name: './heavy.ts'
+  disabled: true            # 保留配置项但不挂载；改回 false 即重新加载</code></pre>
+<p><code>docs/cordis-tutorial/01-first-plugin.zh.md</code> 解释了几件事：</p>
+<ul>
+  <li><code>name</code> 是模块指定符（相对路径或包名），Loader 挂载每一项；</li>
+  <li><strong>各项并发启动</strong>，所以它们在列表里的位置不保证加载先后——顺序由服务依赖（<code>inject</code>）决定；</li>
+  <li>一个配置项不只有 <code>name</code>/<code>config</code>，还接受 <code>id</code>（稳定标识，让 Loader 能区分「改现有项」与「先删再加」）和 <code>disabled</code>。</li>
+</ul>
+<p><code>docs/cordis-primer.md</code> 的「Loader Configuration」补充了配置注入细节：loader 用 <code>@deepseek-ai/cordis-plugin-include</code> 把 <code>!!js</code> 解析成表达式节点；它会插值在配置项声明注入<strong>激活后</strong>、<code>config</code> 字段上（对该插件上下文 <code>ctx.serviceName</code>）以及每次挂载决策时、<code>disabled</code> 字段上（对 loader 上下文）进行。其它元数据保持字面量。<strong>当环境要挑选插件时，用 overlay（叠加层）而不是条件分支。</strong></p>
+
+<blockquote>
+<p><strong><code>cordis.yml</code> 与 <code>cordis.patch.yml</code> 是同一种行列表的两种用途</strong>：前者是独立应用的 loader 入口清单（教程里那种）；后者作为「层」被叠加进一个 profile，按 <code>id</code> 插入新行或整体替换某一行的 <code>config</code>。本文第六章的 bundle patch 用的就是后者。</p>
+</blockquote>
+
+<h2 id="c5">五、运行时的形状：从单个插件到插件树</h2>
+<p>把 2~4 拼起来，运行时是这样一棵东西：</p>
+<div class="diagram"><pre>┌──────────────────────────────────────────────────────────┐
+│ 根 Context（服务仓库：ctx.tools / ctx.llm / ctx.sessions …）│
+│                                                            │
+│   ├─ Loader 插件（读取 cordis.yml，挂载下面每一项）        │
+│   │                                                        │
+│   ├─ fiber: hello        ACTIVE                           │
+│   │     └─ (apply 里 ctx.plugin(child) → 子 fiber)        │
+│   │                                                        │
+│   ├─ fiber: lifecycle-demo  ACTIVE                        │
+│   │     └─ effect: setInterval(tick)  ← 卸载时 clearInterval│
+│   │                                                        │
+│   └─ fiber: needs-timer   PENDING ⚠ 需要的 timer 还没来   │
+└──────────────────────────────────────────────────────────┘</pre></div>
+<p>每个已加载的插件实例都有一个 <strong>fiber</strong>，在以下状态间转换（<code>docs/cordis-tutorial/02-lifecycle-and-effects.zh.md</code>）：</p>
+<div class="diagram"><pre>PENDING → LOADING → ACTIVE → UNLOADING → DISPOSED
+               ↘ FAILED</pre></div>
+<ul>
+  <li><strong>PENDING</strong>：已声明，但所需服务尚不可用——这是「我的插件怎么没输出」最常见的答案；</li>
+  <li><strong>LOADING / ACTIVE</strong>：<code>apply</code> 正在跑 / 已跑完；</li>
+  <li><strong>FAILED</strong>：<code>apply</code> 或配置校验抛异常；</li>
+  <li><strong>UNLOADING / DISPOSED</strong>：disposer 正在跑 / 全部拆完。</li>
+</ul>
+<p><strong>依赖缺失是静默的，不是错误。</strong> 如果 <code>inject</code> 指定了没人提供的服务，插件就一直 PENDING，不输出任何东西。诊断方法（<code>docs/cordis-tutorial/06-composition-and-hmr.zh.md</code>）是枚举注册表、打印处于 <code>PENDING</code> 的 fiber：</p>
+<pre><code>import { FiberState, type Context } from '@deepseek-ai/cordis'
+export function apply(ctx: Context) {
+  setTimeout(() => {
+    for (const runtime of ctx.registry.values())
+      for (const fiber of runtime.fibers)
+        if (fiber.state === FiberState.PENDING)
+          console.log(`${fiber.name} is PENDING — a required service is missing`)
+  }, 500)
+}</code></pre>
+
+<h2 id="c6">六、Profiles / Bundles / Layers：可分发、可叠加的插件化</h2>
+<p>单个 <code>cordis.yml</code> 只是玩具。真实 dsh 把「插件清单」升级成三层概念（<code>docs/architecture.md</code> 的 Profiles and bundles）：</p>
+<blockquote><p>运行中的 dsh 是一棵在 boot 时由<strong>有序层（ordered layers）</strong>组合出来的插件树。</p></blockquote>
+
+<h3>6.1 三个概念</h3>
+<ul>
+  <li><strong>Profile（配置方案）</strong>：存放在 Harness home 里的一份<strong>命名组合</strong>。它列出要堆叠的 bundles、收纳它额外安装的 out-of-tree 插件、并持有用户自己的 <code>cordis.patch.yml</code>。<code>web</code> 和 <code>headless</code> 作为模板随产物发布。</li>
+  <li><strong>Bundle（插件包）</strong>：Cordis 配置行 + 它们挂载的代码的<strong>发行格式</strong>。关键性质——它插入的内容仍能被它<strong>上面的层</strong> patch，所以任何 bundle 都不是黑盒。</li>
+  <li><strong>Layer（层）</strong>：叠加的顺序单位。每个 bundle、用户的 patch、home 级 patch、<code>--patch</code> overlay 各自是一层。</li>
+</ul>
+<p>三者怎么声明？各自在 <code>package.json</code> 里用 <code>dsh</code> 字段自报家门：<code>dsh.profile</code> 列出一个 profile 包含的 bundles；<code>dsh.bundle</code> 指向该 bundle 的 patch 文件。</p>
+
+<h3>6.2 层是怎么叠加的</h3>
+<p>层按顺序作用在一个<strong>空的入口列表</strong>上：</p>
+<div class="diagram"><pre>空入口列表
+   │  ① 按 profile 列出的顺序，逐个 bundle 的 cordis.patch.yml
+   │  ② profile 自己的 cordis.patch.yml
+   │  ③ home 级 cordis.patch.yml
+   │  ④ 任何 --patch overlay
+   ▼
+最终插件树（每一层按 id 定位某一行）</pre></div>
+<p>两条规则（<code>docs/architecture.md</code> + <code>packages/bundle/base/cordis.patch.yml</code> 注释）：</p>
+<ul>
+  <li><strong>patch 按 <code>id</code> 定位某一行，替换的是该行「整个 <code>config</code>」</strong>，而不是 merge 进去——所以「同一行在不同模式下值不同」不该塞进 base，而该属于各模式 bundle；</li>
+  <li><strong>同一行多个层都写，以最后写入者胜（last write wins per row）</strong>。</li>
+</ul>
+<p><code>dsh-base</code> 是<strong>每一个</strong> profile 的第一层（模型适配器、工具、持久化、sandbox、审批策略、设置、凭据、遥测）；<code>dsh-web-app</code> 加上浏览器应用；<code>dsh-headless</code> 加上「一次性运行、完全不带服务器」的模式。想看你这台机器真正 boot 出来的树：</p>
+<pre><code>dsh --profile web --dump-config</code></pre>
+<p>它打印的每一行，你都能用自己的 patch 替换掉。</p>
+
+<h3>6.3 一份真实的 bundle patch</h3>
+<p><code>packages/bundle/base/cordis.patch.yml</code> 长这样（节选）：</p>
+<pre><code># dsh-base：每个 profile 共享核心，作为「对空 profile 根的一次 insert」施加。
+# 后续 bundle patch 与用户 profile 的 cordis.patch.yml 按 id 定位这些行，
+# 同一行以最后写入者胜。
+- insert:
+    - id: timer
+      name: '@deepseek-ai/cordis-plugin-timer'
+    - id: hmr
+      name: '@deepseek-ai/cordis-plugin-hmr'
+      config:
+        root: ['.']
+    - id: llm
+      name: '@deepseek-ai/dsh-llm'
+    - id: session
+      name: '@deepseek-ai/dsh-session'
+    - id: typert
+      name: '@deepseek-ai/dsh-typert-registry'
+    # …… web / headless 等模式 bundle 再在这些 id 上 restate 自己的完整 config</code></pre>
+<p>注意 <code>id</code> 是全局的（跨整个 profile）。dsh-hub 的 <code>AGENTS.md</code> 建议：用能力风格的前缀（如 <code>my-bash-sandbox</code>）给每行起稳定的 id，方便后续 patch 精准命中。</p>
+
+<h3>6.5 一个真实的「用户叠加」例子</h3>
+<p>假设 base 已经用 <code>id: llm</code> 插入了模型适配器。用户的 profile <code>cordis.patch.yml</code> 可以在它<strong>之后</strong>叠加，按同一个 <code>id</code> 改写配置，或新增 base 里没有的行：</p>
+<pre><code># 用户的 profile cordis.patch.yml（作用于 base 之后）
+- insert:
+    - id: llm
+      name: '@deepseek-ai/dsh-llm'
+      config:
+        defaultProvider: deepseek-reasoner   # 整体替换 base 里 llm 的 config
+    - id: my-bash-sandbox
+      name: 'dsh-sandbox-my'                 # 新增一行，base 里没有
+      config:
+        network: isolated</code></pre>
+<p>因为「同一 <code>id</code> 以最后写入者胜」，这里的 <code>llm</code> 配置会盖掉 base 的那份；<code>my-bash-sandbox</code> 则是全新插入的一行。这就是 bundle 为什么说「插入的内容仍可被上层 patch」——它从设计上就不是黑盒。</p>
+
+<h3>6.4 用户怎么装一个插件（面向 dsh-hub）</h3>
+<p>在 dsh-hub 这套指针仓库里，装一个第三方插件走的是 <code>dsh plugin add</code>（<code>dsh-hub/AGENTS.md</code> 的插件规约）：</p>
+<pre><code>dsh plugin add github:&lt;owner&gt;/&lt;repo&gt;     # GitHub：需 prepare 从源码构建 lib/
+dsh plugin add &lt;npm-package&gt;             # npm：要求发布时已构建好 lib/
+dsh plugin add ./local/path              # 本地开发</code></pre>
+<p>一个能被 <code>dsh plugin add</code> 装上的仓库必须满足（非谈判项）：</p>
+<ul>
+  <li><code>package.json</code>：<code>type: "module"</code>、<code>main: "lib/index.js"</code>、<code>exports["."]</code>、声明 <code>dsh.bundle.patch: ./cordis.patch.yml</code>；<code>@deepseek-ai/cordis</code> 同时进 <code>peerDependencies</code> 与 <code>devDependencies</code>（否则会出现重复 Cordis 实例、ctx 坏掉）；<code>@deepseek-ai/schemastery</code> 进 <code>dependencies</code>；scripts 含 <code>build</code>/<code>prepare</code>/<code>typecheck</code>/<code>lint</code>；</li>
+  <li><code>cordis.patch.yml</code>：一个 <code>- insert:</code> 列表，每行有全局唯一的 <code>id</code>、<code>name</code>（从 profile 的 node_modules 解析）、<code>config</code>；</li>
+  <li><code>src/index.ts</code>：函数插件命名导出 <code>name</code>/<code>inject</code>/<code>Config</code>/<code>apply</code> 且无默认导出；服务包默认导出类。</li>
+</ul>
+<p>验证是强制的：建一个临时 profile，对 github / npm / local 三条路径各跑一次 <code>dsh plugin --profile &lt;tmp&gt; add</code>，确认 <code>lib/</code> 经 <code>prepare</code> 构建、无 <code>dsh plugin</code> 警告、<code>dsh --dump-config</code> 显示该层已激活。</p>
+
+<h2 id="c7">七、能力缝（capability seam）：一次替换改变整个产品</h2>
+<p><code>docs/architecture.md</code> 把 dsh 可替换性的真正引擎叫 <strong>seam（能力缝）</strong>：</p>
+<blockquote><p>一个 seam 是一个可替换的能力，有三个角色：声明接口的 <strong>Service Definition</strong>、实现它的 <strong>Service Provider</strong>、使用它的 <strong>Consumer</strong>（通常是面向模型的工具）。一个包可以合演多角，但<strong>只有一角是构不成 seam 的</strong>；加一个能力意味着三个角色都设计出来。</p></blockquote>
+
+<div class="diagram"><pre>   Service Definition ──┐
+                        ├──▶  capability seam（可替换能力）
+   Service Provider  ───┤      换 Provider = 换整片行为
+                        │
+   Consumer         ───┘</pre></div>
+
+<p>三者构成一个完整、可替换的能力单元；缺任何一角都不叫 seam。</p>
+<p>缝之所以强大，是因为「换一个 provider 就换了整个产品」：</p>
+<ul>
+  <li>文件系统与子进程的 provider 共享<strong>同一个执行世界</strong>，所以把这两者指向一个远程 sandbox，Bash、PTY、LSP 会<strong>一起</strong>被搬过去，无需各自分叉 provider；</li>
+  <li>subagent 的 provider 在同一个接口后面差异极大——从「一个全新的子 agent」到「另一个产品里被委派的一轮」，可以无缝换。</li>
+</ul>
+<p><code>architecture.md</code> 还列了一张「新行为去哪」的表（节选），几乎覆盖了所有扩展点：</p>
+<table>
+  <tr><th>目标</th><th>机制</th></tr>
+  <tr><td>加一个模型 provider</td><td>在 <code>ctx.llm</code> 上注册它的适配器</td></tr>
+  <tr><td>加一个面向模型的能力</td><td>在 <code>ctx.tools</code> 注册；它的 schema 会并入 prompt 组装</td></tr>
+  <tr><td>加文件系统访问或策略</td><td>注册一个 <code>ctx.fs</code> provider，或监听 <code>fs/*</code> 事件</td></tr>
+  <tr><td>让某会话用不同的能力集</td><td>组合一个 agent preset；那一行服务需要 <code>isolate</code> 一个 realm</td></tr>
+  <tr><td>加 shell 执行</td><td>注册一个 <code>ctx.shell</code> 后端；本地实现经 <code>ctx.subprocess</code> 拉起</td></tr>
+  <tr><td>加持久终端</td><td>注册一个 <code>ctx.terminals</code> 后端 + <code>dsh-tool-terminal</code></td></tr>
+  <tr><td>加人类命令</td><td>注册到 <code>ctx.commands</code>；它不走模型轮次直接分发</td></tr>
+  <tr><td>加后台工作</td><td>注册到 <code>ctx.jobs</code>；<code>job_*</code> 工具收集或停止它</td></tr>
+  <tr><td>拦截一次请求/工具/轮次</td><td>用它的 <code>agent/*</code> 或 <code>tools/*</code> 事件；<code>agent/turn-stopping</code> 能停下整轮</td></tr>
+  <tr><td>加面向模型的上下文</td><td>调 <code>agent.inject()</code>；它落到下一个被接纳的请求里</td></tr>
+  <tr><td>fork 一个活跃会话</td><td><code>ctx.sessions.fork(source, boundary?, childSessionId?)</code></td></tr>
+  <tr><td>把注册限定在某个 agent</td><td>用那个 agent 的 <code>agent.ctx</code></td></tr>
+</table>
+
+<p>关于上表中的 <code>isolate</code>：它给一个组提供某项服务名称的<strong>独立实例</strong>，于是两个组可以各自看到配置不同的 provider，互不影响（<code>docs/cordis-tutorial/06-composition-and-hmr.zh.md</code>）。agent preset 用它是为了让「某个会话」拥有不同于全局的能力集，而不污染其它会话。</p>
+
+<h2 id="c8">八、热重载（HMR）：改代码不重启</h2>
+<p><code>@deepseek-ai/cordis-plugin-hmr</code> 监视文件，保存时执行「先卸载、再加载」来替换正在跑的插件（<code>docs/cordis-tutorial/06-composition-and-hmr.zh.md</code>）。</p>
+<pre><code>- id: hmr
+  name: '@deepseek-ai/cordis-plugin-hmr'
+  config:
+    root: ['.']
+- id: hello
+  name: './hello.ts'</code></pre>
+<p>编辑 <code>hello.ts</code> 保存后：</p>
+<pre><code>hello from my first plugin
+hmr reload plugin at hello.ts
+hello from my EDITED plugin</code></pre>
+<p>旧实例先卸载（它的所有 effect 回卷），新代码随后加载，<code>apply</code> 再跑一遍。这件事成立的前提，正是前文两点：<strong>注册是可逆的 effect</strong>（卸载能干净拆掉），以及<strong>加载是依赖驱动的</strong>（重新加载后依赖关系重新满足）。</p>
+<p><code>id</code> 在这里也很关键：不带 <code>id</code> 的配置项每次被读取都会获得一个新生成的 id，于是只要配置文件有任何编辑——哪怕那一行文本没变——它也会被视为「先删再加」并重新挂载。这就是为什么 cordis 配置项要显式带 <code>id</code>。</p>
+<p>编辑 <code>cordis.yml</code> 本身也会触发更新：loader 按 <code>id</code> 比较配置项，只挂载/卸载/重配置发生变化的部分。</p>
+
+<h2 id="c9">九、与其它插件模型的差异（概念对照）</h2>
+<p>下面这张表是<strong>概念层对照</strong>，用来快速定位 dsh/Cordis 的站位，而非对某家源码的逐行研读。</p>
+<table>
+  <tr><th>维度</th><th>dsh / Cordis</th><th>传统手动 boot 顺序</th><th>事件总线型插件</th><th>依赖注入容器</th></tr>
+  <tr><td>加载顺序</td><td>依赖驱动：<code>inject</code> 缺服务就 PENDING</td><td>代码里写死 <code>initA(); initB()</code></td><td>注册即生效，顺序靠运气</td><td>构造期按图实例化</td></tr>
+  <tr><td>依赖解析</td><td>按 <code>ctx.&lt;key&gt;</code> 服务名，找不到就等</td><td>直接 import 具体类</td><td>通常无强依赖</td><td>按类型自动装配</td></tr>
+  <tr><td>注册生命周期</td><td>effect 可逆，卸载即回卷</td><td>常忘记反注册，泄漏</td><td>需手动 off，易漏</td><td>按作用域销毁</td></tr>
+  <tr><td>配置叠加</td><td>分层 patch，按 id last-write-wins</td><td>一处 if/else</td><td>各自读配置</td><td>profile/override</td></tr>
+  <tr><td>热更新</td><td>HMR 卸载+加载，天然成立</td><td>基本要重启</td><td>难，监听要重建</td><td>部分支持</td></tr>
+  <tr><td>扩展性边界</td><td>「挂一个插件」而非「改核心」</td><td>改核心代码</td><td>挂监听但难换核心</td><td>换实现但核心固定</td></tr>
+</table>
+<p>dsh 的四个鲜明特点：<strong>声明式分层 patch、依赖驱动的 PENDING、effect 可逆、类型化事件</strong>。前两者保证「组合可声明、缺失可诊断」，后两者保证「替换可预测、热更新可行」。</p>
+
+<h2 id="c10">十、实践建议</h2>
+<p><strong>给插件开发者：</strong></p>
+<ul>
+  <li>默认用<strong>函数形态</strong>；只有要公开 <code>ctx.&lt;key&gt;</code> 时才上 Service 子类。服务包默认导出类、函数插件命名导出 <code>name/inject/Config/apply</code> 且无默认导出——两者别混。</li>
+  <li>任何 Cordis 没管的资源（定时器、连接、watcher）都包进 <code>ctx.effect()</code> 并返回 disposer；内置注册 API 本身已是 effect，别重复造。</li>
+  <li>部署会变的选择放进可校验的 <code>Config</code> 字段（走 cordis.yml 改），<strong>别在插件里硬编码 tunables</strong>（<code>packages/AGENTS.md</code> 的硬规矩）。</li>
+  <li>配置项务必带稳定 <code>id</code>；否则任何编辑都会触发「删了重加」。</li>
+</ul>
+<p><strong>给架构师：</strong></p>
+<ul>
+  <li>想做<strong>可分发</strong>的插件化，用 bundle（配置行 + 代码）而不是把逻辑写进某个 profile；bundle 插入的行仍可被上层 patch，所以它是开放的而不是黑盒。</li>
+  <li>想做<strong>可替换</strong>的能力，用 seam 的三角色（Definition / Provider / Consumer）来设计，而不是在 loop 里加 if。换一个 provider 就能换掉整片行为。</li>
+  <li>跨 bundle 共享配置时记住：patch 按 id <strong>整体替换</strong> config，不是 merge；模式相关的值交给各模式 bundle 各自 restate。</li>
+</ul>
+<p><strong>给排查者：</strong></p>
+<ul>
+  <li>插件「没输出、不报错」——先查它的 fiber 是不是 <code>PENDING</code>（缺某个 <code>inject</code> 的服务）。</li>
+  <li>改了插件代码想立刻生效——确认 HMR 插件在跑，且你的包带 <code>id</code>。</li>
+  <li>想知道最终 boot 出什么——<code>dsh --profile &lt;name&gt; --dump-config</code>，它打印的每一行都能被你自己的 patch 替换。</li>
+</ul>
+
+<h2 id="c11">十一、术语速查</h2>
+<table>
+  <tr><th>术语</th><th>含义</th></tr>
+  <tr><td>插件（plugin）</td><td>向共享 Context 贡献服务/事件/可逆 effect 的对象；函数、对象、Service 子类三种形态</td></tr>
+  <tr><td>服务（service）</td><td>认领一个稳定 <code>ctx.&lt;key&gt;</code> 的能力单元；其它插件按 key 而非 import 找它</td></tr>
+  <tr><td>上下文（Context）</td><td>服务仓库；<code>ctx.tools</code> / <code>ctx.llm</code> / <code>ctx.sessions</code> 等都在其上</td></tr>
+  <tr><td><code>inject</code></td><td>插件声明所需服务；缺失时插件进入 PENDING，不报错</td></tr>
+  <tr><td>effect</td><td>通过 <code>ctx.effect()</code>/<code>ctx.on()</code> 安装的注册；插件卸载时自动回卷</td></tr>
+  <tr><td>fiber</td><td>一个已加载插件实例的运行时句柄；有 PENDING→ACTIVE→…→DISPOSED 状态机</td></tr>
+  <tr><td>Profile</td><td>Harness home 里的命名组合：列 bundles、收纳 out-of-tree 插件、持用户 patch</td></tr>
+  <tr><td>Bundle</td><td>Cordis 配置行 + 挂载代码的发行格式；插入内容仍可被上层 patch</td></tr>
+  <tr><td>Layer</td><td>叠加顺序单位；顺序为 bundle→profile patch→home patch→<code>--patch</code> overlay</td></tr>
+  <tr><td>patch（按 id）</td><td>定位某一行，整体替换其 <code>config</code> 或插入新行；同 id 以最后写入者胜</td></tr>
+  <tr><td>seam（能力缝）</td><td>可替换能力，含 Definition/Provider/Consumer 三角色，缺一不构成 seam</td></tr>
+  <tr><td>waterfall</td><td>around 中间件式事件；监听器须调 <code>next()</code> 否则短路</td></tr>
+  <tr><td>HMR</td><td>热模块替换：保存文件时卸载+加载该插件，因 effect 可逆而成立</td></tr>
+</table>
+
+<div class="footer">
+<p>基于 deepseek-harness v0.1.1-rc.2 (b150a55) 源码（<code>docs/cordis-primer.md</code>、<code>docs/architecture.md</code>、<code>docs/cordis-tutorial/*</code>、<code>packages/bundle/base/cordis.patch.yml</code>、<code>packages/AGENTS.md</code>）与 <code>dsh-hub/AGENTS.md</code> 撰写 · 2026-08-26 · dsh-hub 项目 · 系列第三篇预告：agent loop 的内部构造</p>
+</div>
+
+</div>
+</body>
+</html>

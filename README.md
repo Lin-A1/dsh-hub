@@ -147,6 +147,15 @@ four-way comparison against opencode, OpenAI Codex, and Claude Code:
 - [docs/dsh-image-pipeline-wiki.html](docs/dsh-image-pipeline-wiki.html) (HTML)
 - [docs/dsh-image-pipeline-wiki.pdf](docs/dsh-image-pipeline-wiki.pdf) (PDF)
 
+Second installment — **how dsh is pluginized** (Cordis five ideas, plugin
+shapes, loader & `cordis.yml`, the plugin tree & fiber state machine,
+profiles / bundles / layers, capability seams, HMR), grounded in the
+`deepseek-harness` source and the `dsh-hub` plugin spec:
+
+- [docs/dsh-plugin-architecture-wiki.md](docs/dsh-plugin-architecture-wiki.md) (Markdown)
+- [docs/dsh-plugin-architecture-wiki.html](docs/dsh-plugin-architecture-wiki.html) (HTML)
+- [docs/dsh-plugin-architecture-wiki.pdf](docs/dsh-plugin-architecture-wiki.pdf) (PDF)
+
 ## License
 
 Plugins retain their own licenses. See each plugin's repository.
