@@ -31,3 +31,4 @@ plugins sit side by side under the category their capability belongs to.
 | `credentials/` | Credential-reference providers |
 | `vision/` | Vision bridges for text-only models (OCR/layout) |
 | `memory/` | Long-term memory and context bundles |
+| `workspace/` | Project and workspace management, developer workbench surfaces |

@@ -52,3 +52,7 @@
 [submodule "plugins/lsp/dsh-lsp-pyright"]
 	path = plugins/lsp/dsh-lsp-pyright
 	url = https://github.com/Lin-A1/dsh-lsp-pyright.git
+[submodule "plugins/workspace/dsh-workbench"]
+	path = plugins/workspace/dsh-workbench
+	url = https://github.com/Lin-A1/dsh-workbench.git
+	branch = master
