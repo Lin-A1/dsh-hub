@@ -1,0 +1,5 @@
+# packager-local only — never merged into deepseek-harness or dsh-hub
+# see dsh-hub/AGENTS.md Workspace isolation
+packages: []
+allowBuilds:
+  electron: true

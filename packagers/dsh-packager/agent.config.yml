@@ -1,0 +1,23 @@
+# dsh-fixed-builder config — choose DSH version + fixed plugins (immutable after build)
+# DSH_DIR: any deepseek-harness checkout/tag/commit (non-invasive, read-only)
+dshDir: ../../deepseek-harness
+productName: dsh-fixed-demo
+appId: com.example.dsh-fixed-demo
+# mode: fixed (baked) | compat (hot-plug, extraResources outside asar)
+mode: fixed
+# External catalog sources (dsh-hub + user custom). Builder merges them at pack time.
+catalogSources:
+  - type: dsh-hub
+    path: ../../plugins
+  - type: user
+    specs:
+      - "github:Lin-A1/dsh-agent-browser"
+# Fixed plugins — id globally unique, later layers win per id (vendor/include/src/index.ts:121)
+# unique plugins (singleton, one per app): use single id; multi plugins: add multiple ids
+plugins:
+  - id: llm-deepseek
+    name: "@deepseek-ai/dsh-llm-deepseek"
+  - id: tool-bash
+    name: "@deepseek-ai/dsh-tool-bash"
+  - id: tool-fs
+    name: "@deepseek-ai/dsh-tool-fs"

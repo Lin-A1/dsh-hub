@@ -1,0 +1,39 @@
+appId: com.deepseek.dsh-desktop
+productName: dsh-desktop
+directories:
+  buildResources: build
+  output: dist/desktop
+files:
+  - "src/main.mjs"
+  - "src/preload.mjs"
+  - "package.json"
+extraResources:
+  # dsh runtime (compat mode) — outside asar so profile node_modules resolution works
+  - from: "resources/dsh"
+    to: "dsh"
+    filter: ["**/*"]
+  # bundled node for true out-of-box (no system node needed)
+  - from: "resources/node"
+    to: "node"
+    filter: ["**/*"]
+  # dsh icon for window + tray + shortcut IconLocation
+  - from: "build/icon.png"
+    to: "build/icon.png"
+  - from: "build/icon.ico"
+    to: "build/icon.ico"
+# fixed mode bakes cordis.yml inside asar via resources/fixed
+asar: true
+win:
+  target: nsis
+  icon: build/icon.ico
+  sign: null
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+publish:
+  provider: github
+  releaseType: draft
+
+afterPack: scripts/after-pack.cjs

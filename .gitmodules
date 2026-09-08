@@ -22,15 +22,9 @@
 [submodule "plugins/shell/dsh-shell-win-corrected"]
 	path = plugins/shell/dsh-shell-win-corrected
 	url = https://github.com/Lin-A1/dsh-shell-win-corrected.git
-[submodule "plugins/subagent/dsh-subagent-http"]
-	path = plugins/subagent/dsh-subagent-http
-	url = https://github.com/Lin-A1/dsh-subagent-http.git
 [submodule "plugins/jobs/dsh-jobs-cron"]
 	path = plugins/jobs/dsh-jobs-cron
 	url = https://github.com/Lin-A1/dsh-jobs-cron.git
-[submodule "packagers/dsh-packager"]
-	path = packagers/dsh-packager
-	url = https://github.com/Lin-A1/dsh-packager.git
 [submodule "plugins/web/treg"]
 	path = plugins/web/treg
 	url = https://github.com/superdesigndev/treg.git
