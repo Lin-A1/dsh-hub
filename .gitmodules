@@ -22,18 +22,12 @@
 [submodule "plugins/shell/dsh-shell-win-corrected"]
 	path = plugins/shell/dsh-shell-win-corrected
 	url = https://github.com/Lin-A1/dsh-shell-win-corrected.git
-[submodule "plugins/web/dsh-web-firecrawl"]
-	path = plugins/web/dsh-web-firecrawl
-	url = https://github.com/Lin-A1/dsh-web-firecrawl.git
 [submodule "plugins/subagent/dsh-subagent-http"]
 	path = plugins/subagent/dsh-subagent-http
 	url = https://github.com/Lin-A1/dsh-subagent-http.git
 [submodule "plugins/jobs/dsh-jobs-cron"]
 	path = plugins/jobs/dsh-jobs-cron
 	url = https://github.com/Lin-A1/dsh-jobs-cron.git
-[submodule "plugins/skill/dsh-skill-github"]
-	path = plugins/skill/dsh-skill-github
-	url = https://github.com/Lin-A1/dsh-skill-github.git
 [submodule "packagers/dsh-packager"]
 	path = packagers/dsh-packager
 	url = https://github.com/Lin-A1/dsh-packager.git
@@ -46,12 +40,6 @@
 [submodule "plugins/skill/dsh-anchored-standard"]
 	path = plugins/skill/dsh-anchored-standard
 	url = https://github.com/xiaobright/dsh-anchored-standard.git
-[submodule "plugins/hooks/dsh-hooks-github"]
-	path = plugins/hooks/dsh-hooks-github
-	url = https://github.com/Lin-A1/dsh-hooks-github.git
-[submodule "plugins/lsp/dsh-lsp-pyright"]
-	path = plugins/lsp/dsh-lsp-pyright
-	url = https://github.com/Lin-A1/dsh-lsp-pyright.git
 [submodule "plugins/workspace/dsh-workbench"]
 	path = plugins/workspace/dsh-workbench
 	url = https://github.com/Lin-A1/dsh-workbench.git
