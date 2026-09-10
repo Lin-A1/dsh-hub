@@ -14,8 +14,8 @@ dsh-hub/
 鈹溾攢鈹€ deepseek-harness/        # Official harness, tracked on master (see Submodules)
 鈹溾攢鈹€ packagers/dsh-packager/  # Desktop packager (in-tree) 鈥?specify DSH_DIR, out-of-box installer
 鈹斺攢鈹€ plugins/
-    鈹溾攢鈹€ browser/ shell/ terminal/ web/ jobs/ skill/
-    鈹斺攢鈹€ workflow/ vision/ memory/ sandbox/ workspace/
+    鈹溾攢鈹€ browser/ memory/ sandbox/ skill/
+    鈹斺攢鈹€ vision/ web/ workflow/ workspace/
 ```
 
 ## Desktop packager (out-of-box, multi-DSH)

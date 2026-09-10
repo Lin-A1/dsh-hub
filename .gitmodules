@@ -15,9 +15,6 @@
 [submodule "plugins/memory/memos"]
 	path = plugins/memory/memos
 	url = https://github.com/MemTensor/MemOS.git
-[submodule "plugins/shell/dsh-shell-win-corrected"]
-	path = plugins/shell/dsh-shell-win-corrected
-	url = https://github.com/Lin-A1/dsh-shell-win-corrected.git
 [submodule "plugins/web/treg"]
 	path = plugins/web/treg
 	url = https://github.com/superdesigndev/treg.git
