@@ -6,10 +6,6 @@
 	path = plugins/browser/dsh-agent-browser
 	url = https://github.com/Lin-A1/dsh-agent-browser.git
 	branch = master
-[submodule "plugins/terminal/dsh-ssh-terminal"]
-	path = plugins/terminal/dsh-ssh-terminal
-	url = https://github.com/Lin-A1/dsh-ssh-terminal.git
-	branch = master
 [submodule "plugins/vision/modlens"]
 	path = plugins/vision/modlens
 	url = https://github.com/liustack/modlens.git
@@ -22,9 +18,6 @@
 [submodule "plugins/shell/dsh-shell-win-corrected"]
 	path = plugins/shell/dsh-shell-win-corrected
 	url = https://github.com/Lin-A1/dsh-shell-win-corrected.git
-[submodule "plugins/jobs/dsh-jobs-cron"]
-	path = plugins/jobs/dsh-jobs-cron
-	url = https://github.com/Lin-A1/dsh-jobs-cron.git
 [submodule "plugins/web/treg"]
 	path = plugins/web/treg
 	url = https://github.com/superdesigndev/treg.git
